@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 20px;
+  }
+  
+  .slider:before {
+    position: absolute;
+    content: '';
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+  }
+  
+  .peer:focus ~ .peer-checked::before {
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);
+  }
+  
+  .peer:checked ~ .peer-checked {
+    background-color: #2196F3;
+  }
+  
+  .peer-checked::before {
+    transform: translateX(26px);
+  }
