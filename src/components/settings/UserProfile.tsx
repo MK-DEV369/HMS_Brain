@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserCircleIcon } from 'lucide-react';
-import Button from "../common/Button";
+import Button from '../common/Button';
 
 interface UserProfileProps {
   username?: string;
@@ -15,16 +15,21 @@ const UserProfile: React.FC<UserProfileProps> = ({ username, onEdit, onDelete })
   const handleEditClick = () => {
     setIsEditing(true);
     setNewUsername(username);
+    if (onEdit) onEdit();
   };
 
   const handleSaveEdit = () => {
     if (newUsername && newUsername.trim() !== '') {
-      // Here you would typically update the username in your backend or state
       console.log(`Username updated to: ${newUsername}`);
       setIsEditing(false);
     } else {
       console.log('Username cannot be empty');
     }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setNewUsername(username);
   };
 
   const handleDelete = () => {
@@ -38,41 +43,66 @@ const UserProfile: React.FC<UserProfileProps> = ({ username, onEdit, onDelete })
   };
 
   return (
-    <div className="flex items-center space-x-4 cursor-pointer hover:text-blue-500">
-      <div className={`flex items-center space-x-2 ${isEditing ? 'bg-gray-100 p-1' : ''}`}>
-        <UserCircleIcon className="h-6 w-6" />
+    <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+      <div
+        className={`flex items-center space-x-2 transition-all duration-300 ${
+          isEditing ? 'bg-gray-100 p-2 rounded-lg' : ''
+        }`}
+      >
+        <UserCircleIcon className="h-6 w-6 text-gray-600" />
         {isEditing ? (
           <input
             type="text"
             value={newUsername || ''}
             onChange={handleUsernameChange}
-            className="w-20 text-center"
+            className="px-3 py-2 bg-gray-50 border border-gray-300 text-gray-900 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
             placeholder="New username"
           />
         ) : (
-          <span>{username || 'Guest'}</span>
+          <span className="text-gray-800 font-medium">{username || 'Guest'}</span>
         )}
       </div>
-      {onEdit && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleEditClick}
-          className="px-2 py-1"
-        >
-          Edit
-        </Button>
-      )}
-      {onDelete && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleDelete}
-          className="px-2 py-1"
-        >
-          Delete
-        </Button>
-      )}
+      <div className="flex space-x-2">
+        {isEditing ? (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSaveEdit}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-300 transform hover:scale-105"
+            >
+              Save
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCancelEdit}
+              className="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200 transition-all duration-300"
+            >
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleEditClick}
+              className="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200 transition-all duration-300 transform hover:scale-105"
+            >
+              Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDelete}
+              className="px-4 py-2 bg-red-100 text-red-700 border border-red-300 rounded-lg hover:bg-red-200 transition-all duration-300 transform hover:scale-105"
+            >
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 };

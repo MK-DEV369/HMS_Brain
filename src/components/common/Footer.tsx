@@ -21,9 +21,8 @@ const Footer: React.FC = () => {
               Resources
             </h3>
             <div className="flex flex-col space-y-2">
-              <a href="#" className="text-gray-600 hover:text-gray-900">Documentation</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Research Papers</a>
-              <a href="#" className="text-gray-600 hover:text-gray-900">Case Studies</a>
+              <a href="https://github.com/MK-DEV369/HMS_Brain" className="text-gray-600 hover:text-gray-900">Documentation</a>
+              <a href="https://drive.google.com/drive/folders/1E0fTAo76CXUsU3bN_hMsLKdB6DdyDwAC?usp=sharing" className="text-gray-600 hover:text-gray-900">Research Papers</a>
             </div>
           </div>
           
@@ -32,11 +31,11 @@ const Footer: React.FC = () => {
               Contact
             </h3>
             <div className="flex flex-col space-y-2">
-              <a href="mailto:contact@hms.com" className="flex items-center text-gray-600 hover:text-gray-900">
+              <a href="mailto:lmoryakantha.ai24@rvce.edu.in" className="flex items-center text-gray-600 hover:text-gray-900">
                 <Mail className="h-4 w-4 mr-2" />
-                contact@hms.com
+                L Moryakantha
               </a>
-              <a href="https://github.com/hms" className="flex items-center text-gray-600 hover:text-gray-900">
+              <a href="https://github.com/MK-DEV369/HMS_Brain" className="flex items-center text-gray-600 hover:text-gray-900">
                 <Github className="h-4 w-4 mr-2" />
                 GitHub
               </a>

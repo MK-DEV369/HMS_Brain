@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react';
 
 type Status = 'normal' | 'warning' | 'critical';
 
@@ -14,42 +14,41 @@ interface StatusIndicatorProps {
 
 const statusConfig = {
   normal: {
-    icon: CheckCircle,
+    Icon: CheckCircle,
     color: 'text-green-500',
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    text: 'Normal Activity',
+    bg: 'bg-green-100',
+    border: 'border-green-300',
+    label: 'Normal Activity',
   },
   warning: {
-    icon: AlertTriangle,
+    Icon: AlertTriangle,
     color: 'text-yellow-500',
-    bg: 'bg-yellow-50',
-    border: 'border-yellow-200',
-    text: 'Abnormal Pattern Detected',
+    bg: 'bg-yellow-100',
+    border: 'border-yellow-300',
+    label: 'Abnormal Pattern',
   },
   critical: {
-    icon: AlertCircle,
+    Icon: AlertCircle,
     color: 'text-red-500',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    text: 'Critical Activity',
+    bg: 'bg-red-100',
+    border: 'border-red-300',
+    label: 'Critical Activity',
   },
 };
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, details }) => {
-  const config = statusConfig[status];
-  const Icon = config.icon;
+  const { Icon, color, bg, border, label } = statusConfig[status];
 
   return (
-    <div className={`flex items-center space-x-2 p-3 rounded-lg ${config.bg} ${config.border}`}>
-      <Icon className={`h-5 w-5 ${config.color}`} />
+    <div className={`flex items-center space-x-3 p-4 rounded-lg ${bg} ${border}`}>
+      <Icon className={`h-6 w-6 ${color}`} />
       <div>
-        <p className={`font-medium ${config.color}`}>{config.text}</p>
+        <p className={`font-semibold ${color}`}>{label}</p>
         {details && (
           <p className="text-sm text-gray-600">
             {details.value}
-            {details.unit}
-            {details.threshold && ` (Threshold: ${details.threshold}${details.unit})`}
+            {details.unit && ` ${details.unit}`}
+            {details.threshold && ` (Threshold: ${details.threshold}${details.unit || ''})`}
           </p>
         )}
       </div>

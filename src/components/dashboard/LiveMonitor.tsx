@@ -1,105 +1,300 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Bell, Activity, User, AlertCircle } from 'lucide-react';
-
-// Mock data - In production, this would come from your WebSocket
-const generateEEGData = () => {
-  const data = [];
-  for (let i = 0; i < 100; i++) {
-    data.push({
-      time: i,
-      amplitude: Math.sin(i * 0.1) * 10 + Math.random() * 5,
-      alpha: Math.sin(i * 0.1) * 5 + Math.random() * 2,
-      beta: Math.cos(i * 0.1) * 3 + Math.random() * 1.5,
-    });
-  }
-  return data;
-};
+import { Bell, Activity, User, AlertCircle, AlertTriangle } from 'lucide-react';
+import { API_BASE_URL, WS_BASE_URL } from '../../utils/constants';
+import { processEEGData, calculateFrequencyBands, ProcessedEEGPoint } from '../../utils/dataProcessing';
+import { useUser } from '../../context/UserContext';
+import PatientSelector from './PatientSelector';
+import { Patient, LiveMonitorProps } from '../../utils/types';
+import { predictEEG } from "../../services/api";
 
 // Classification result options
 const classificationResults = [
-  { id: 1, status: "Normal", color: "bg-green-500", severity: "Low" },
-  { id: 2, status: "Focal Seizure", color: "bg-yellow-500", severity: "Medium" },
-  { id: 3, status: "General Seizure", color: "bg-red-500", severity: "High" },
-  { id: 4, status: "Status Epilepticus", color: "bg-red-700", severity: "Critical" }
+  { id: 0, status: "Seizure", color: "bg-red-500", severity: "Critical" },
+  { id: 1, status: "LPD", color: "bg-orange-500", severity: "High" },
+  { id: 2, status: "GPD", color: "bg-yellow-500", severity: "Medium" },
+  { id: 3, status: "LRDA", color: "bg-green-500", severity: "Medium" },
+  { id: 4, status: "GRDA", color: "bg-blue-500", severity: "Low" },
+  { id: 5, status: "Others", color: "bg-gray-400", severity: "Low" }
 ];
 
-export default function LiveMonitor() {
-  const [eegData, setEEGData] = useState(generateEEGData());
+export default function LiveMonitor({eegData}: LiveMonitorProps) {
+  const [patients, setPatients] = useState([]);
   const [classification, setClassification] = useState(classificationResults[0]);
-  const [selectedPatient, setSelectedPatient] = useState("Patient-001");
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [isLive, setIsLive] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
+  const [confidenceScores, setConfidenceScores] = useState({
+    Seizure: 0,
+    LPD: 0,
+    GPD: 0,
+    LRDA: 0,
+    GRDA: 0,
+    Others: 0,
+  });
+  const [vitalSigns, setVitalSigns] = useState({
+    heartRate: "--",
+    temperature: "--",
+    bloodPressure: "--"
+  });
   
-  // Simulate real-time data updates
+  const socketRef = useRef<WebSocket | null>(null);
+  const { currentUser } = useUser();
+  
+  // const handleLivePrediction = async (filename: string) => {
+  //   if (!selectedPatient) return;
+  //   try {
+  //     setLoading(true);
+  //     const result = await predictEEG(filename); // Call the backend API
+  //     console.log('Prediction result:', result);
+  //     const response = await fetch(`${API_BASE_URL}/eeg/data/${selectedPatient?.id}/`);
+  //     console.log('Response (Alpha Beta Gamma)', response);
+  //     if (!response.ok) {
+  //       throw new Error("Failed to fetch EEG data");
+  //     }
+  //     const result2 = await response.json(); //Confidence Scores
+  //     const classId = result.prediction;
+  //     setConfidenceScores(result.confidence_scores);
+
+  //     if (classId === 0) setStatus('normal');
+  //     else if (classId < 4) setStatus('warning');
+  //     else setStatus('critical');
+
+  //     const labelNames = ['seizure', 'lpd', 'gpd', 'lrda', 'grda', 'others'];
+  //     const label = labelNames[classId];
+  //     const alertType = classId > 3 ? 'critical' : classId > 0 ? 'warning' : 'info';
+
+  //     if (classId !== 0) {
+  //       setAlerts(prev => [
+  //         ...prev,
+  //         {
+  //           id: Date.now().toString(),
+  //           type: alertType,
+  //           message: `Detected: ${label.toUpperCase()}`,
+  //           timestamp: new Date(),
+  //         },
+  //       ]);
+  //     }
+  //       // Update EEG data for visualization
+  //     const eegDataFromBackend = result2.eegData || []; // Ensure backend returns EEG data
+  //     setEegData(prevData => [
+  //       ...prevData.slice(-50), // Keep the last 50 points
+  //       ...eegDataFromBackend.map((dataPoint: any, index: number) => ({
+  //         time: prevData.length + index,
+  //         amplitude: dataPoint.amplitude,
+  //         alpha: dataPoint.alpha,
+  //         beta: dataPoint.beta,
+  //       })),
+  //     ]);
+  //   } catch (error) {
+  //     console.error('Prediction failed:', error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // Real-time timer and prediction trigger
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setCurrentTime(new Date().toLocaleTimeString());
+  //     if (selectedPatient) {
+  //       handleLivePrediction(`${selectedPatient.id}.parquet`); // Use patient-specific EEG file
+  //     }
+  //   }, 5000);
+  //   return () => clearInterval(interval);
+  // }, [selectedPatient]);
+
+  // Fetch available patients
   useEffect(() => {
-    if (!isLive) return;
-    
-    const interval = setInterval(() => {
-      // Shift data and add new point
-      const newData = [...eegData.slice(1)];
-      const lastTime = eegData[eegData.length - 1].time;
-      newData.push({
-        time: lastTime + 1,
-        amplitude: Math.sin(lastTime * 0.1) * 10 + Math.random() * 5,
-        alpha: Math.sin(lastTime * 0.1) * 5 + Math.random() * 2,
-        beta: Math.cos(lastTime * 0.1) * 3 + Math.random() * 1.5,
-      });
-      setEEGData(newData);
-      
-      // Randomly update classification every 10 seconds
-      if (Math.random() < 0.1) {
-        const randomIndex = Math.floor(Math.random() * classificationResults.length);
-        setClassification(classificationResults[randomIndex]);
+    const fetchPatients = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/eeg/patients/`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch patients');
+        }
+        const data = await response.json();
+        console.log('Fetched patients:', data); // Debugging
+        setPatients(data);
+      } catch (err) {
+        console.error('Error fetching patients:', err);
       }
-      
-      // Update clock
+    };
+    
+    fetchPatients();
+    
+    // Update clock every second
+    const clockInterval = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString());
     }, 1000);
     
-    return () => clearInterval(interval);
-  }, [eegData, isLive]);
+    return () => clearInterval(clockInterval);
+  }, []);
+  
+  // Fetch patient details when selected patient changes
+  useEffect(() => {
+    const fetchPatientDetails = async () => {
+      if (!selectedPatient) return;
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/eeg/patients/${selectedPatient.id}/`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch patient details');
+        }
+        const data = await response.json();
+        setVitalSigns({
+          heartRate: data.vital_signs?.heart_rate || "--",
+          temperature: data.vital_signs?.temperature || "--",
+          bloodPressure: data.vital_signs?.blood_pressure || "--"
+        });
+      } catch (err) {
+        console.error('Error fetching patient details:', err);
+      }
+    };
+    
+    fetchPatientDetails();
+  }, [selectedPatient]);
+  
+useEffect(() => {
+  if (!selectedPatient || !isLive) return;
 
-  const patients = [
-    { id: "Patient-001", name: "John Doe", age: 45, room: "ICU-4" },
-    { id: "Patient-002", name: "Jane Smith", age: 32, room: "ICU-2" },
-    { id: "Patient-003", name: "Robert Johnson", age: 67, room: "ICU-7" }
-  ];
+  const wsUrl = `${WS_BASE_URL}/ws/eeg/${selectedPatient.id}/`;
+  socketRef.current = new WebSocket(wsUrl);
+
+  socketRef.current.onopen = () => {
+    console.log("WebSocket connected");
+    setIsConnected(true);
+    setError(null);
+  };
+
+  socketRef.current.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+
+    if (message.type === "eeg_data") {
+      const processedData = processEEGData(message.data);
+      setEEGData((prevData) => [...prevData, ...processedData].slice(-100));
+    } else if (message.type === "classification") {
+    const { classification_id, confidence_scores } = message;
+    const matchedClass = classificationResults.find(c => c.id === classification_id) || classificationResults[0];
+    setClassification(matchedClass);
+
+    setConfidenceScores({
+      Seizure: confidence_scores?.seizure ?? 0,
+      LPD: confidence_scores?.lpd ?? 0,
+      GPD: confidence_scores?.gpd ?? 0,
+      LRDA: confidence_scores?.lrda ?? 0,
+      GRDA: confidence_scores?.grda ?? 0,
+      Others: confidence_scores?.others ?? 0,
+    });
+  } else if (message.type === "vital_signs") {
+      setVitalSigns({
+        heartRate: message.data?.heart_rate ?? "--",
+        temperature: message.data?.temperature ?? "--",
+        bloodPressure: message.data?.blood_pressure ?? "--"
+      });
+    }
+  };
+
+  socketRef.current.onerror = (e) => {
+    console.error("WebSocket error:", e);
+    setIsConnected(false);
+  };
+
+  socketRef.current.onclose = () => {
+    console.log("WebSocket closed");
+    setIsConnected(false);
+  };
+
+  return () => {
+    socketRef.current?.close();
+  };
+}, [selectedPatient, isLive]);
+
+  
+  // Handle live toggle
+  const toggleLiveMode = () => {
+    const newLiveState = !isLive;
+    setIsLive(newLiveState);
+    
+    if (!newLiveState && socketRef.current) {
+      // Close connection when pausing
+      socketRef.current.close();
+      setIsConnected(false);
+    }
+  };
+  
+  // Send alert to medical staff
+  const alertMedicalStaff = async () => {
+    if (!selectedPatient) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/eeg/alerts/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser?.token}`
+        },
+        body: JSON.stringify({
+          patient_id: selectedPatient,
+          alert_type: classification.id,
+          message: `Alert: ${classification.status} detected for patient`,
+          severity: classification.severity
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to send alert');
+      }
+      
+      // Show success indicator (could add a toast notification here)
+      alert('Alert sent successfully');
+      console.log('Alert sent successfully');
+    } catch (err) {
+      console.error('Failed to send alert. Please try again. Error sending alert:', err);
+    }
+  };
+  
+  // Calculate frequency bands for visualization
+  const frequencyData = calculateFrequencyBands(eegDataState.slice(-20));
 
   return (
     <div className="flex flex-col space-y-4 p-6 h-full">
       {/* Header with patient selector and time */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <User className="text-blue-500" />
-            <select
-              className="bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500"
-              value={selectedPatient}
-              onChange={(e) => setSelectedPatient(e.target.value)}
-            >
-              {patients.map(patient => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.name} - {patient.room}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500">Age: 45</span>
-            <span className="text-sm text-gray-500">ID: {selectedPatient}</span>
-          </div>
+          <PatientSelector
+            patients={patients}
+            selectedPatient={selectedPatient}
+            onSelectPatient={(patient: any) => setSelectedPatient(patient)}
+          />
+          {selectedPatient && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">Age: {selectedPatient.age}</span>
+              <span className="text-sm text-gray-500">Room: {selectedPatient.room}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-4">
           <div className="text-lg font-bold">{currentTime}</div>
+          <div className={`flex items-center px-3 py-1 rounded-lg text-xs ${isConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+            {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+          </div>
           <button
             className={`px-4 py-2 rounded-lg ${isLive ? 'bg-green-500 text-white' : 'bg-gray-300'}`}
-            onClick={() => setIsLive(!isLive)}
+            onClick={toggleLiveMode}
           >
             {isLive ? 'LIVE' : 'PAUSED'}
           </button>
         </div>
-      </div>
+      </div>      
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center space-x-2">
+          <AlertTriangle size={16} />
+          <span>{error}</span>
+        </div>
+      )}
       
       {/* Main content grid */}
       <div className="grid grid-cols-4 gap-4 h-full">
@@ -123,20 +318,24 @@ export default function LiveMonitor() {
           <div className="flex flex-col space-y-2">
             <div className="flex justify-between">
               <span>Heart Rate:</span>
-              <span>72 BPM</span>
+              <span>{vitalSigns.heartRate} BPM</span>
             </div>
             <div className="flex justify-between">
               <span>Temperature:</span>
-              <span>98.6°F</span>
+              <span>{vitalSigns.temperature}°F</span>
             </div>
             <div className="flex justify-between">
               <span>Blood Pressure:</span>
-              <span>120/80</span>
+              <span>{vitalSigns.bloodPressure}</span>
             </div>
           </div>
           
           <div className="mt-auto">
-            <button className="w-full bg-blue-500 text-white py-2 rounded-lg flex items-center justify-center space-x-2">
+            <button 
+              className="w-full bg-blue-500 text-white py-2 rounded-lg flex items-center justify-center space-x-2"
+              onClick={alertMedicalStaff}
+              disabled={!selectedPatient || !isConnected}
+            >
               <Bell />
               <span>Alert Medical Staff</span>
             </button>
@@ -155,98 +354,93 @@ export default function LiveMonitor() {
           </div>
           
           <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={eegData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="amplitude" 
-                  stroke="#8884d8" 
-                  strokeWidth={2} 
-                  dot={false} 
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="alpha" 
-                  stroke="#82ca9d" 
-                  strokeWidth={1} 
-                  dot={false} 
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="beta" 
-                  stroke="#ffc658" 
-                  strokeWidth={1} 
-                  dot={false} 
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {eegDataState.length === 0 ? (
+              <div className="h-full w-full flex items-center justify-center text-gray-500">
+                {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={eegDataState}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis domain={['auto', 'auto']} />
+                  <Tooltip />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="amplitude" 
+                    stroke="#8884d8" 
+                    strokeWidth={2} 
+                    dot={false} 
+                    isAnimationActive={false} // Disable animation for real-time data
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="alpha" 
+                    stroke="#82ca9d" 
+                    strokeWidth={1} 
+                    dot={false} 
+                    isAnimationActive={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="beta" 
+                    stroke="#ffc658" 
+                    strokeWidth={1} 
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
           
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-bold mb-2">Frequency Analysis</h3>
               <div className="h-32">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={eegData.slice(0, 20)}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Line 
-                      type="monotone" 
-                      dataKey="alpha" 
-                      stroke="#82ca9d" 
-                      strokeWidth={2} 
-                      dot={false} 
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {eegDataState.length === 0 ? (
+                  <div className="h-full w-full flex items-center justify-center text-gray-500">
+                    No data available
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={frequencyData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="frequency" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line 
+                        type="monotone" 
+                        dataKey="power" 
+                        stroke="#82ca9d" 
+                        strokeWidth={2} 
+                        dot={false} 
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-bold mb-2">ML Classification Confidence</h3>
               <div className="space-y-2">
-                <div>
-                  <div className="flex justify-between">
-                    <span>Normal</span>
-                    <span>{classification.id === 1 ? '87%' : '12%'}</span>
+                {Object.entries(confidenceScores).map(([label, score]) => (
+                  <div key={label}>
+                    <div className="flex justify-between">
+                      <span>{label}</span>
+                      <span>{score.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div
+                        className="bg-blue-500 h-2.5 rounded-full"
+                        style={{ width: `${score}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-green-500 h-2.5 rounded-full" style={{ width: classification.id === 1 ? '87%' : '12%' }}></div>
-                  </div>
+                ))}
                 </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>Focal Seizure</span>
-                    <span>{classification.id === 2 ? '76%' : '5%'}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-yellow-500 h-2.5 rounded-full" style={{ width: classification.id === 2 ? '76%' : '5%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>General Seizure</span>
-                    <span>{classification.id === 3 ? '91%' : '2%'}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-red-500 h-2.5 rounded-full" style={{ width: classification.id === 3 ? '91%' : '2%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>Status Epilepticus</span>
-                    <span>{classification.id === 4 ? '95%' : '1%'}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-red-700 h-2.5 rounded-full" style={{ width: classification.id === 4 ? '95%' : '1%' }}></div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -255,155 +449,57 @@ export default function LiveMonitor() {
   );
 }
 
-/**
- * import React, { useState, useEffect } from 'react';
-import { AlertCircle, User } from 'lucide-react';
-import EEGGraph from '../common/EEGGraph';
-import AlertPanel from './AlertPanel';
-import PatientSelector from './PatientSelector';
-import StatusIndicator from './StatusIndicator';
-
-// Mock patient data
-const mockPatients = [
-  { id: '1', name: 'John Doe', age: 45, room: '101A', status: 'stable' as const },
-  { id: '2', name: 'Jane Smith', age: 32, room: '102B', status: 'warning' as const },
-  { id: '3', name: 'Bob Johnson', age: 58, room: '103A', status: 'critical' as const },
-];
-
-// Mock alerts
-const mockAlerts = [
-  {
-    id: '1',
-    type: 'warning' as const,
-    message: 'Unusual alpha wave pattern detected',
-    timestamp: new Date(),
-  },
-  {
-    id: '2',
-    type: 'critical' as const,
-    message: 'High amplitude spike detected',
-    timestamp: new Date(),
-  },
-];
-
-// Simulated EEG data generation
-const generateEEGData = () => {
-  const data = [];
-  for (let i = 0; i < 100; i++) {
-    data.push({
-      timestamp: i,
-      value: Math.sin(i * 0.1) * 10 + Math.random() * 5,
-      channel: 'EEG1',
-    });
-  }
-  return data;
-};
-
-const LiveMonitor: React.FC = () => {
-  const [eegData, setEEGData] = useState(generateEEGData());
-  const [status, setStatus] = useState<'normal' | 'warning' | 'critical'>('normal');
-  const [selectedPatient, setSelectedPatient] = useState(mockPatients[0]);
-  const [alerts, setAlerts] = useState(mockAlerts);
-
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setEEGData((prevData) => {
-        const newData = [...prevData.slice(1)];
-        newData.push({
-          timestamp: prevData[prevData.length - 1].timestamp + 1,
-          value: Math.sin(prevData[prevData.length - 1].timestamp * 0.1) * 10 + Math.random() * 5,
-          channel: 'EEG1',
-        });
-        
-        // Randomly change status for demo
-        if (Math.random() > 0.95) {
-          const newStatus = Math.random() > 0.5 ? 'warning' : 'normal';
-          setStatus(newStatus);
-          if (newStatus === 'warning') {
-            setAlerts((prev) => [
-              {
-                id: Date.now().toString(),
-                type: 'warning',
-                message: 'Abnormal pattern detected',
-                timestamp: new Date(),
-              },
-              ...prev,
-            ]);
-          }
-        }
-        
-        return newData;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleDismissAlert = (id: string) => {
-    setAlerts((prev) => prev.filter((alert) => alert.id !== id));
-  };
-
-  return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div className="w-64">
-          <PatientSelector
-            patients={mockPatients}
-            selectedPatient={selectedPatient}
-            onSelectPatient={setSelectedPatient}
-          />
-        </div>
-        <StatusIndicator
-          status={status}
-          details={{
-            value: 45,
-            threshold: 50,
-            unit: 'μV',
-          }}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg">
-            <h3 className="text-lg font-medium mb-4">Live EEG Monitor</h3>
-            <div className="h-[400px]">
-              <EEGGraph
-                data={eegData}
-                height={400}
-                channels={['EEG1']}
-                isLive={true}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mt-6">
-            <MetricCard title="Signal Quality" value="98%" />
-            <MetricCard title="Sample Rate" value="256 Hz" />
-            <MetricCard
-              title="Classification"
-              value={status === 'normal' ? 'Normal' : 'Abnormal'}
-            />
-          </div>
-        </div>
-
-        <div>
-          <AlertPanel alerts={alerts} onDismiss={handleDismissAlert} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const MetricCard = ({ title, value }: { title: string; value: string }) => (
-  <div className="bg-gray-50 rounded-lg p-4">
-    <h3 className="text-sm font-medium text-gray-500">{title}</h3>
-    <p className="mt-1 text-xl font-semibold text-gray-900">{value}</p>
-  </div>
-);
-
-export default LiveMonitor;
-
-
- */
+{/* <div>
+                  <div className="flex justify-between">
+                    <span>Seizure</span>
+                    <span>{classification.id === 0 ? confidenceScores.seizure : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-green-500 h-2.5 rounded-full" style={{ width: `${classification.id === 0 ? confidenceScores.seizure :'N'} %` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>LPD</span>
+                    <span>{classification.id === 1 ? confidenceScores.lpd : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className=" bg-purple-800 h-2.5 rounded-full" style={{ width: `${classification.id === 1 ? confidenceScores.lpd : 'N'} %` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>GPD</span>
+                    <span>{classification.id === 2 ? confidenceScores.gpd : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-red-500 h-2.5 rounded-full" style={{ width: `${classification.id === 2 ? confidenceScores.gpd : 'N'} %` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>LRDA</span>
+                    <span>{classification.id === 3 ? confidenceScores.lrda : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-orange-700 h-2.5 rounded-full" style={{ width: `${classification.id === 3 ? confidenceScores.lrda : 'N'} %` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>GRDA</span>
+                    <span>{classification.id === 4 ? confidenceScores.grda : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-yellow-500 h-2.5 rounded-full" style={{ width: `${classification.id === 4 ? confidenceScores.grda : 'N'} %` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>Others</span>
+                    <span>{classification.id === 5 ? confidenceScores.others : "NA"} %</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-blue-700 h-2.5 rounded-full" style={{ width: `${classification.id === 5 ? confidenceScores.others : 'N'} %` }}></div>
+                  </div>
+                </div> */}

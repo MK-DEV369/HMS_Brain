@@ -20,11 +20,17 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex space-x-4">
-            <NavItem 
+            {/* <NavItem 
               icon={<Activity />} 
               text="Monitor" 
               active={location.pathname === '/dashboard'}
               to="/monitor"
+            /> */}
+            <NavItem 
+              icon={<Activity />} 
+              text="Monitor" 
+              active={location.pathname === '/dashboard'}
+              to="/dashboard"
             />
             <NavItem 
               icon={<ArrowUpNarrowWide />} 
@@ -66,11 +72,17 @@ const Navbar = () => {
       {isMobileMenuOpen && (
         <div className="md:hidden">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            <NavItem 
+            {/* <NavItem 
               icon={<Activity />} 
               text="Monitor" 
               active={location.pathname === '/dashboard'}
               to="/monitor"
+            /> */}
+            <NavItem 
+              icon={<Activity />} 
+              text="Monitor" 
+              active={location.pathname === '/dashboard'}
+              to="/dashboard"
             />
             <NavItem 
               icon={<ArrowUpNarrowWide />} 
