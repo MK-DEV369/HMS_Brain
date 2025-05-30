@@ -25,3 +25,9 @@ dist-ssr
 backend/intelligence/train_eegs
 backend/intelligence/preprocessed
 backend/hms_backend/__pycache__
+backend/intelligence/models/RandomForest/__pycache__
+train_eegs.zip
+train_spectrograms.zip
+Todo.txt
+.bolt/config.json
+.bolt/prompt

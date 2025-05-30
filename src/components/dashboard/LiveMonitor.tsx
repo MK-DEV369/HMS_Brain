@@ -227,34 +227,55 @@ useEffect(() => {
   
   // Send alert to medical staff
   const alertMedicalStaff = async () => {
-    if (!selectedPatient) return;
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/eeg/alerts/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentUser?.token}`
-        },
-        body: JSON.stringify({
-          patient_id: selectedPatient,
-          alert_type: classification.id,
-          message: `Alert: ${classification.status} detected for patient`,
-          severity: classification.severity
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to send alert');
-      }
-      
-      // Show success indicator (could add a toast notification here)
-      alert('Alert sent successfully');
-      console.log('Alert sent successfully');
-    } catch (err) {
-      console.error('Failed to send alert. Please try again. Error sending alert:', err);
+  if (!selectedPatient) return;
+
+  // Play emergency sound
+  const audio = new Audio('/siren.mp3');
+  audio.play().catch(err => console.error('Audio play failed:', err));
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/alerts/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentUser?.token}`
+      },
+      body: JSON.stringify({
+        patient_id: selectedPatient,
+        alert_type: classification.id,
+        message: `Alert: ${classification.status} detected for patient`,
+        severity: classification.severity
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to send alert');
     }
-  };
+
+    // 🚨 Optional: Trigger SMS via backend endpoint
+    const smsResponse = await fetch(`${API_BASE_URL}/notify/sms/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentUser?.token}`
+      },
+      body: JSON.stringify({
+        phone_number: "+91xxxxxxxxxx",  // replace with config or backend-assigned number
+        message: `🚨 Urgent: ${classification.status} detected for patient in Room ${selectedPatient?.room}.`
+      })
+    });
+
+    if (!smsResponse.ok) {
+      console.warn("Failed to send SMS");
+    }
+
+    alert('Alert sent successfully');
+    console.log('Alert + SMS sent successfully');
+  } catch (err) {
+    console.error('Error sending alert:', err);
+  }
+};
+
   
   // Calculate frequency bands for visualization
   const frequencyData = calculateFrequencyBands(eegDataState.slice(-20));
@@ -275,11 +296,11 @@ useEffect(() => {
               <span className="text-sm text-gray-500">Room: {selectedPatient.room}</span>
             </div>
           )}
-        </div>
-        <div className="flex items-center space-x-4">
+        </div>        
+        <div className="flex items-center space-x-4"> 
           <div className="text-lg font-bold">{currentTime}</div>
           <div className={`flex items-center px-3 py-1 rounded-lg text-xs ${isConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-            {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+            {isConnected ? 'CONNECTED' : 'DISCONNECTED'} {/* Websocket Connection for CONNECTED OR DISCONNECTED */}
           </div>
           <button
             className={`px-4 py-2 rounded-lg ${isLive ? 'bg-green-500 text-white' : 'bg-gray-300'}`}
@@ -297,9 +318,10 @@ useEffect(() => {
       )}
       
       {/* Main content grid */}
-      <div className="grid grid-cols-4 gap-4 h-full">
-        {/* Left sidebar with status */}
-        <div className="col-span-1 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
+      <div className="grid grid-cols-12 gap-4 h-full">
+  {/* Left sidebar with status */}
+  <div className="col-span-3 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
+    <div className="col-span-1 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-bold">Status</h3>
             <Activity className="text-blue-500" />
@@ -329,101 +351,7 @@ useEffect(() => {
               <span>{vitalSigns.bloodPressure}</span>
             </div>
           </div>
-          
-          <div className="mt-auto">
-            <button 
-              className="w-full bg-blue-500 text-white py-2 rounded-lg flex items-center justify-center space-x-2"
-              onClick={alertMedicalStaff}
-              disabled={!selectedPatient || !isConnected}
-            >
-              <Bell />
-              <span>Alert Medical Staff</span>
-            </button>
-          </div>
-        </div>
-        
-        {/* Main EEG Display */}
-        <div className="col-span-3 bg-white rounded-lg p-4 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
-            <div className="flex space-x-2">
-              <button className="px-3 py-1 bg-gray-200 rounded-lg text-sm">1 min</button>
-              <button className="px-3 py-1 bg-blue-500 text-white rounded-lg text-sm">5 min</button>
-              <button className="px-3 py-1 bg-gray-200 rounded-lg text-sm">15 min</button>
-            </div>
-          </div>
-          
-          <div className="h-64 w-full">
-            {eegDataState.length === 0 ? (
-              <div className="h-full w-full flex items-center justify-center text-gray-500">
-                {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={eegDataState}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis domain={['auto', 'auto']} />
-                  <Tooltip />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="amplitude" 
-                    stroke="#8884d8" 
-                    strokeWidth={2} 
-                    dot={false} 
-                    isAnimationActive={false} // Disable animation for real-time data
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="alpha" 
-                    stroke="#82ca9d" 
-                    strokeWidth={1} 
-                    dot={false} 
-                    isAnimationActive={false}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="beta" 
-                    stroke="#ffc658" 
-                    strokeWidth={1} 
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-          
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-bold mb-2">Frequency Analysis</h3>
-              <div className="h-32">
-                {eegDataState.length === 0 ? (
-                  <div className="h-full w-full flex items-center justify-center text-gray-500">
-                    No data available
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={frequencyData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="frequency" />
-                      <YAxis />
-                      <Tooltip />
-                      <Line 
-                        type="monotone" 
-                        dataKey="power" 
-                        stroke="#82ca9d" 
-                        strokeWidth={2} 
-                        dot={false} 
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-bold mb-2">ML Classification Confidence</h3>
               <div className="space-y-2">
                 {Object.entries(confidenceScores).map(([label, score]) => (
@@ -442,9 +370,78 @@ useEffect(() => {
                 ))}
                 </div>
             </div>
+          
+          <div className="mt-auto">
+            <button 
+              className="w-full bg-blue-500 text-white py-2 rounded-lg flex items-center justify-center space-x-2"
+              onClick={alertMedicalStaff}
+              disabled={!selectedPatient || !isConnected}
+            >
+              <Bell />
+              <span>Alert Medical Staff</span>
+            </button>
           </div>
         </div>
+  </div>
+
+  {/* Right content: EEG + Spectrogram */}
+  <div className="col-span-9 flex flex-col space-y-4">
+    {/* EEG Chart */}
+    <div className="bg-white rounded-lg shadow p-4 w-full">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
       </div>
+      <div className="h-64 w-full">
+        {eegDataState.length === 0 ? (
+          <div className="h-full w-full flex items-center justify-center text-gray-500">
+            {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={eegDataState}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis domain={['auto', 'auto']} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+
+    {/* Spectrogram */}
+    <div className="bg-white rounded-lg shadow p-4 w-full">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Real-time Spectrogram Monitoring</h2>
+      </div>
+      <div className="h-64 w-full">
+        {eegDataState.length === 0 ? (
+          <div className="h-full w-full flex items-center justify-center text-gray-500">
+            {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={eegDataState}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis domain={['auto', 'auto']} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
     </div>
   );
 }

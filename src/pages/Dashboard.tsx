@@ -88,7 +88,7 @@ const Dashboard: React.FC = () => {
   // }, [selectedPatient]);
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 via-cyan-50 to-white min-h-screen p-6">
+    <div className="bg-gradient-to-br from-blue-50 via-cyan-50 to-white min-h-screen">
       {/* Live Monitor */}
       <div className="relative">
         {loading && <LoadingSpinner />}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Activity, FileText, Settings, Menu, X, ArrowUpNarrowWide, BookCheck } from 'lucide-react';
+import { Brain, Activity, FileText, User2Icon, Menu, X, ArrowUpNarrowWide} from 'lucide-react';
 
 const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -45,10 +45,10 @@ const Navbar = () => {
               to="/reports"
             />
             <NavItem 
-              icon={<Settings />} 
-              text="Settings"
-              active={location.pathname === '/settings'}
-              to="/settings"
+              icon={<User2Icon />} 
+              text="Login"
+              active={location.pathname === '/login'}
+              to="/login"
             />
           </div>
 
@@ -98,10 +98,10 @@ const Navbar = () => {
               to="/reports"
             />
             <NavItem 
-              icon={<Settings />} 
-              text="Settings"
-              active={location.pathname === '/settings'}
-              to="/settings"
+              icon={<User2Icon />} 
+              text="Login"
+              active={location.pathname === '/login'}
+              to="/login"
             />
           </div>
         </div>

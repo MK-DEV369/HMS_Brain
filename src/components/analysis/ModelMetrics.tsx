@@ -46,10 +46,12 @@ const generateClusterData = (centerX: number, centerY: number, label: string, co
 };
 
 const tsneData = [
-  ...generateClusterData(-20, -15, 'Normal', 50),
-  ...generateClusterData(15, 20, 'Focal Seizure', 40),
-  ...generateClusterData(20, -15, 'General Seizure', 35),
-  ...generateClusterData(-15, 15, 'Status Epilepticus', 25)
+  ...generateClusterData(-20, -15, 'seizure', 50),
+  ...generateClusterData(15, 20, 'lpd', 40),
+  ...generateClusterData(20, -15, 'gpd', 35),
+  ...generateClusterData(-15, 15, 'lrda', 25),
+  ...generateClusterData(20, 15, 'grda', 30),
+  ...generateClusterData(20, 20, 'others', 45)
 ];
 
 export default function AnalysisPage() {
@@ -124,13 +126,6 @@ export default function AnalysisPage() {
             <PieChartIcon size={16} />
             <span>Model Performance</span>
           </button>
-          <button
-            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'clusters' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setActiveTab('clusters')}
-          >
-            <Activity size={16} />
-            <span>Data Clusters</span>
-          </button>
         </div>
         
         <div className="p-6">
@@ -165,15 +160,15 @@ export default function AnalysisPage() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={[
-                        { x: 0, normal: 0.2, focal: 0.1, general: 0.05, status: 0.02 },
-                        { x: 5, normal: 0.5, focal: 0.2, general: 0.1, status: 0.05 },
-                        { x: 10, normal: 0.8, focal: 0.3, general: 0.2, status: 0.1 },
-                        { x: 15, normal: 0.9, focal: 0.6, general: 0.4, status: 0.2 },
-                        { x: 20, normal: 0.7, focal: 0.9, general: 0.6, status: 0.3 },
-                        { x: 25, normal: 0.4, focal: 0.8, general: 0.9, status: 0.5 },
-                        { x: 30, normal: 0.2, focal: 0.5, general: 0.7, status: 0.9 },
-                        { x: 35, normal: 0.1, focal: 0.3, general: 0.4, status: 0.7 },
-                        { x: 40, normal: 0.05, focal: 0.1, general: 0.2, status: 0.4 },
+                        { x: 0, seizure: 0.1, lpd: 0.8, gpd: 0.3, lrda: 0.6, grda: 0.2, others: 0.9 },
+                        { x: 5, seizure: 0.3, lpd: 0.9, gpd: 0.6, lrda: 0.8, grda: 0.5, others: 0.7 },
+                        { x: 10, seizure: 0.6, lpd: 0.7, gpd: 0.9, lrda: 0.5, grda: 0.8, others: 0.4 },
+                        { x: 15, seizure: 0.8, lpd: 0.5, gpd: 0.7, lrda: 0.9, grda: 0.4, others: 0.6 },
+                        { x: 20, seizure: 0.9, lpd: 0.3, gpd: 0.5, lrda: 0.7, grda: 0.6, others: 0.8 },
+                        { x: 25, seizure: 0.7, lpd: 0.6, gpd: 0.8, lrda: 0.4, grda: 0.9, others: 0.3 },
+                        { x: 30, seizure: 0.5, lpd: 0.4, gpd: 0.2, lrda: 0.3, grda: 0.7, others: 0.1 },
+                        { x: 35, seizure: 0.2, lpd: 0.1, gpd: 0.4, lrda: 0.2, grda: 0.9, others: 0.5 },
+                        { x: 40, seizure: 0.05, lpd: 0.2, gpd: 0.1, lrda: 0.1, grda: 0.6, others: 0.3 },
                       ]}
                     >
                       <CartesianGrid strokeDasharray="3 3" />
@@ -181,10 +176,12 @@ export default function AnalysisPage() {
                       <YAxis label={{ value: 'Power Density', angle: -90, position: 'insideLeft' }} />
                       <Tooltip />
                       <Legend />
-                      <Line type="monotone" dataKey="normal" stroke="#8884d8" name="Normal" />
-                      <Line type="monotone" dataKey="focal" stroke="#82ca9d" name="Focal Seizure" />
-                      <Line type="monotone" dataKey="general" stroke="#ffc658" name="General Seizure" />
-                      <Line type="monotone" dataKey="status" stroke="#ff8042" name="Status Epilepticus" />
+                      <Line type="monotone" dataKey="seizure" stroke="#8884d8" name="Seizures" />
+                      <Line type="monotone" dataKey="lpd" stroke="#82ca9d" name="LPD" />
+                      <Line type="monotone" dataKey="gpd" stroke="#ffc658" name="GPD" />
+                      <Line type="monotone" dataKey="lrda" stroke="#ff8042" name="LRDA" />
+                      <Line type="monotone" dataKey="grda" stroke="#273746" name="GRDA" />
+                      <Line type="monotone" dataKey="others" stroke="#F39C12" name="Others" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -259,82 +256,7 @@ export default function AnalysisPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-          
-          {activeTab === 'clusters' && (
-            <div>
-              <h3 className="text-lg font-medium mb-4">t-SNE Visualization of EEG Data</h3>
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart
-                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-                  >
-                    <CartesianGrid />
-                    <XAxis type="number" dataKey="x" name="t-SNE Dimension 1" />
-                    <YAxis type="number" dataKey="y" name="t-SNE Dimension 2" />
-                    <Tooltip cursor={{ strokeDasharray: '3 3' }} 
-                      content={({ payload }) => {
-                        if (payload && payload.length) {
-                          return (
-                            <div className="bg-white p-2 border border-gray-300 rounded-md shadow-sm">
-                              <p className="font-medium">{payload[0].payload.label}</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend />
-                    <Scatter 
-                      name="Normal" 
-                      data={tsneData.filter(d => d.label === 'Normal')} 
-                      fill="#8884d8" 
-                    />
-                    <Scatter 
-                      name="Focal Seizure" 
-                      data={tsneData.filter(d => d.label === 'Focal Seizure')} 
-                      fill="#82ca9d" 
-                    />
-                    <Scatter 
-                      name="General Seizure" 
-                      data={tsneData.filter(d => d.label === 'General Seizure')} 
-                      fill="#ffc658" 
-                    />
-                    <Scatter 
-                      name="Status Epilepticus" 
-                      data={tsneData.filter(d => d.label === 'Status Epilepticus')} 
-                      fill="#ff8042" 
-                    />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-sm text-gray-600 mt-2">
-                The t-SNE plot shows clear clustering of EEG data by seizure type, indicating that our feature extraction process effectively captures the distinguishing characteristics of each class.
-              </p>
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium mb-2">Model Architecture: {selectedModel}</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h5 className="text-sm font-medium text-gray-700 mb-1">Preprocessing Steps</h5>
-                    <ul className="list-disc list-inside text-sm text-gray-600">
-                      <li>Bandpass filtering (0.5-70Hz)</li>
-                      <li>Artifact removal (ICA-based)</li>
-                      <li>Signal normalization</li>
-                      <li>Segmentation into 10s epochs</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h5 className="text-sm font-medium text-gray-700 mb-1">Feature Extraction</h5>
-                    <ul className="list-disc list-inside text-sm text-gray-600">
-                      <li>Power spectral density (5 frequency bands)</li>
-                      <li>Wavelet coefficients</li>
-                      <li>Time-domain statistical features</li>
-                      <li>Complexity measures (entropy, fractal dimension)</li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="mt-4">
+              <div className="mt-4">
                   <h5 className="text-sm font-medium text-gray-700 mb-1">Hyperparameters</h5>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <div className="bg-white p-2 rounded border border-gray-200">
@@ -355,7 +277,6 @@ export default function AnalysisPage() {
                     </div>
                   </div>
                 </div>
-              </div>
             </div>
           )}
         </div>
