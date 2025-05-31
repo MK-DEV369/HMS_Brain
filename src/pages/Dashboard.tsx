@@ -3,7 +3,7 @@ import LiveMonitor from '../components/dashboard/LiveMonitor';
 import AlertPanel from '../components/dashboard/AlertPanel';
 import StatusIndicator from '../components/dashboard/StatusIndicator';
 import { predictEEG } from "../services/api";
-import LoadingSpinner from '../components/common/LoadingSpinner'; // Show spinner during prediction
+import LoadingSpinner from '../components/common/LoadingSpinner';
 import { ProcessedEEGPoint } from '../utils/dataProcessing';
 import { Patient } from '../utils/types';
 import { API_BASE_URL } from '../utils/constants';
@@ -28,7 +28,7 @@ const Dashboard: React.FC = () => {
     // Fetch EEG data from numpy file
   const fetchEEGData = async (patientId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/eeg/numpy/eeg/${patientId}/`);
+      const response = await fetch(`${API_BASE_URL}/numpy/eeg/${patientId}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch EEG numpy data');
       }
@@ -65,7 +65,7 @@ const Dashboard: React.FC = () => {
   // Fetch Spectrogram data from numpy file
   const fetchSpectrogramData = async (patientId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/eeg/numpy/spec/${patientId}/`);
+      const response = await fetch(`${API_BASE_URL}/numpy/spec/${patientId}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch spectrogram numpy data');
       }

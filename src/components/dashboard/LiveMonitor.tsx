@@ -42,15 +42,23 @@ export default function LiveMonitor({ eegData, onAlertMedicalStaff }: ExtendedLi
     GRDA: 0,
     Others: 0,
   });
-  const [vitalSigns, setVitalSigns] = useState({
+  const [vitalSigns, setVitalSigns] = useState<{
+  heartRate: number | string;
+  temperature: number | string;
+  bloodPressure: string;
+  }>({
     heartRate: "--",
     temperature: "--",
-    bloodPressure: "--"
+    bloodPressure: "--",
   });
+
   
   const socketRef = useRef<WebSocket | null>(null);
   const eegIntervalRef = useRef<number | null>(null);
   const spectrogramIntervalRef = useRef<number | null>(null);
+  const [fullEEGBuffer, setFullEEGBuffer] = useState<ProcessedEEGPoint[]>([]);
+  const [pointer, setPointer] = useState(0);
+
 // Enhanced Alert Medical Staff function
 const alertMedicalStaff = async () => {
   if (!selectedPatient || !user) return;    
@@ -105,34 +113,33 @@ const alertMedicalStaff = async () => {
 
   // Fetch EEG data from numpy files
   const fetchEEGFromNumpy = async (patientId: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/eeg/numpy/eeg/${patientId}/`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch EEG numpy data');
-      }
-      const data = await response.json();
-      
-      // Convert numpy data to ProcessedEEGPoint format
-      const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => ({
-        time: index,
-        amplitude: point.amplitude || point[0] || Math.random() * 100 - 50,
-        alpha: point.alpha || point[1] || Math.random() * 20,
-        beta: point.beta || point[2] || Math.random() * 15,
-        gamma: point.gamma || Math.random() * 10,
-        theta: point.theta || Math.random() * 25,
-        delta: point.delta || Math.random() * 30
-      }));
-      
-      setEEGData(prevData => [...prevData.slice(-50), ...processedData.slice(-20)]);
-    } catch (error) {
-      console.error('Error fetching EEG numpy data:', error);
-    }
-  };
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
+    if (!response.ok) throw new Error('Failed to fetch EEG numpy data');
+
+    const data = await response.json();
+    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => ({
+      time: index,
+      amplitude: point.amplitude || point[0],
+      alpha: point.alpha || point[1],
+      beta: point.beta || point[2],
+      gamma: point.gamma || point[3] || Math.random() * 10,
+      theta: point.theta || point[4] || Math.random() * 25,
+      delta: point.delta || point[5] || Math.random() * 30
+    }));
+
+    setFullEEGBuffer(processedData);
+    setPointer(0);
+    setEEGData(processedData);
+  } catch (error) {
+    console.error('Error fetching EEG numpy data:', error);
+  }
+};
 
   // Fetch Spectrogram data from numpy files
   const fetchSpectrogramFromNumpy = async (patientId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/eeg/numpy/spec/${patientId}/`);
+      const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch spectrogram numpy data');
       }
@@ -209,49 +216,63 @@ const alertMedicalStaff = async () => {
     };
   }, [selectedPatient, isLive]);
 
-  // Fetch patient details when selected patient changes
-  useEffect(() => {
-    const fetchPatientDetails = async () => {
-      if (!selectedPatient) return;
-      
-      try {
-        const response = await fetch(`${API_BASE_URL}/eeg/patients/${selectedPatient.id}/`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch patient details');
-        }
-        const data = await response.json();
-        setVitalSigns({
-          heartRate: data.vital_signs?.heart_rate || "--",
-          temperature: data.vital_signs?.temperature || "--",
-          bloodPressure: data.vital_signs?.blood_pressure || "--"
-        });
-      } catch (err) {
-        console.error('Error fetching patient details:', err);
-      }
-    };
-    
-    fetchPatientDetails();
-  }, [selectedPatient]);
+useEffect(() => {
+  if (!selectedPatient) return;
 
-  // WebSocket connection for real-time updates
-  useEffect(() => {
-    if (!selectedPatient || !isLive) return;
-    
-    const wsUrl = `${WS_BASE_URL}/ws/eeg/${selectedPatient.id}/`;
-    socketRef.current = new WebSocket(wsUrl);
-    
-    socketRef.current.onopen = () => {
-      console.log("WebSocket connected");
-      setIsConnected(true);
-      setError(null);
-    };
-    
-    socketRef.current.onmessage = (event) => {
+  const controller = new AbortController();
+
+  const fetchVitals = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/eeg/data/${selectedPatient.id}/`,
+        { signal: controller.signal }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch EEG + vital signs');
+
+      const data = await response.json();
+
+      setVitalSigns({
+        heartRate: data?.vital_signs?.heart_rate ?? "--",
+        temperature: data?.vital_signs?.temperature ?? "--",
+        bloodPressure: data?.vital_signs?.blood_pressure ?? "--"
+      });
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("❌ Failed to load vital signs:", err);
+        setVitalSigns({ heartRate: "--", temperature: "--", bloodPressure: "--" });
+      }
+    }
+  };
+
+  fetchVitals();
+  return () => controller.abort();
+}, [selectedPatient]);
+
+
+useEffect(() => {
+  if (!selectedPatient || !isLive) return;
+
+  const wsUrl = `${WS_BASE_URL}/ws/eeg/${selectedPatient.id}/`;
+  const socket = new WebSocket(wsUrl);
+  socketRef.current = socket;
+
+  socket.onopen = () => {
+    console.log("✅ WebSocket connected");
+    setIsConnected(true);
+    setError(null);
+  };
+
+  socket.onmessage = (event) => {
+    try {
       const message = JSON.parse(event.data);
+
       if (message.type === "eeg_data") {
         const processedData = processEEGData(message.data);
-        setEEGData((prevData) => [...prevData, ...processedData].slice(-100));
-      } else if (message.type === "classification") {
+        setEEGData((prev) => [...prev, ...processedData].slice(-100));
+      }
+
+      if (message.type === "classification") {
         const { classification_id, confidence_scores } = message;
         const matchedClass = classificationResults.find(c => c.id === classification_id) || classificationResults[0];
         setClassification(matchedClass);
@@ -263,29 +284,36 @@ const alertMedicalStaff = async () => {
           GRDA: confidence_scores?.grda ?? 0,
           Others: confidence_scores?.others ?? 0,
         });
-      } else if (message.type === "vital_signs") {
+      }
+
+      if (message.type === "vital_signs") {
         setVitalSigns({
           heartRate: message.data?.heart_rate ?? "--",
           temperature: message.data?.temperature ?? "--",
           bloodPressure: message.data?.blood_pressure ?? "--"
         });
       }
-    };
-    
-    socketRef.current.onerror = (e) => {
-      console.error("WebSocket error:", e);
-      setIsConnected(false);
-    };
-    
-    socketRef.current.onclose = () => {
-      console.log("WebSocket closed");
-      setIsConnected(false);
-    };
-    
-    return () => {
-      socketRef.current?.close();
-    };
-  }, [selectedPatient, isLive]);
+
+    } catch (e) {
+      console.error("❌ Error parsing WebSocket message:", e);
+    }
+  };
+
+  socket.onerror = (e) => {
+    console.error("❌ WebSocket error:", e);
+    setIsConnected(false);
+  };
+
+  socket.onclose = () => {
+    console.log("🔌 WebSocket closed");
+    setIsConnected(false);
+  };
+
+  return () => {
+    socket.close();
+  };
+}, [selectedPatient, isLive]);
+
   
   // Handle live toggle
   const toggleLiveMode = () => {
@@ -355,20 +383,18 @@ const alertMedicalStaff = async () => {
             </div>
           </div>
           
-          <div className="flex flex-col space-y-2">
             <div className="flex justify-between">
-              <span>Heart Rate:</span>
-              <span>{vitalSigns.heartRate} BPM</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Temperature:</span>
-              <span>{vitalSigns.temperature}°F</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Blood Pressure:</span>
-              <span>{vitalSigns.bloodPressure}</span>
-            </div>
-          </div>
+                <span>Heart Rate:</span>
+                <span>{vitalSigns.heartRate} BPM</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Temperature:</span>
+                <span>{vitalSigns.temperature} °F</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Blood Pressure:</span>
+                <span>{vitalSigns.bloodPressure}</span>
+              </div>
           
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="font-bold mb-2">ML Classification Confidence</h3>
@@ -408,11 +434,23 @@ const alertMedicalStaff = async () => {
           {/* EEG Chart */}
           <div className="bg-white rounded-lg shadow p-4 w-full">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
-              <span className="text-sm text-gray-500">
-                Data from: {selectedPatient ? `eeg/${selectedPatient.id}.npy` : 'No patient selected'}
-              </span>
+              <div>
+                <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
+                <span className="text-sm text-gray-500 block">
+                  Data from: {selectedPatient ? `eeg/${selectedPatient.id}.npy` : 'No patient selected'}
+                </span>
+              </div>
+
+              {selectedPatient && (
+                <button
+                  className="ml-4 px-3 py-1 rounded bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition"
+                  onClick={() => fetchEEGFromNumpy(selectedPatient.id.toString())}
+                >
+                  Reload EEG Data
+                </button>
+              )}
             </div>
+            
             <div className="h-64 w-full">
               {eegDataState.length === 0 ? (
                 <div className="h-full w-full flex items-center justify-center text-gray-500">
@@ -420,21 +458,58 @@ const alertMedicalStaff = async () => {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={eegDataState}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis domain={['auto', 'auto']} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="gamma" stroke="#ff7300" strokeWidth={1} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+                    <LineChart
+                      data={eegDataState}
+                      margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+                      <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Legend verticalAlign="top" height={36} />
+                      <Line
+                        type="monotone"
+                        dataKey="amplitude"
+                        name="Amplitude"
+                        stroke="#8884d8"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="alpha"
+                        name="Alpha"
+                        stroke="#82ca9d"
+                        strokeWidth={1}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="beta"
+                        name="Beta"
+                        stroke="#ffc658"
+                        strokeWidth={1}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="gamma"
+                        name="Gamma"
+                        stroke="#ff7300"
+                        strokeWidth={1}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+
+              </div>
             </div>
-          </div>
+
           
           {/* Spectrogram */}
           <div className="bg-white rounded-lg shadow p-4 w-full">
