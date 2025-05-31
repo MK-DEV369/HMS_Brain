@@ -31,10 +31,10 @@ const Footer: React.FC = () => {
               Contact
             </h3>
             <div className="flex flex-col space-y-2">
-              <a href="mailto:lmoryakantha.ai24@rvce.edu.in" className="flex items-center text-gray-600 hover:text-gray-900">
+              {/* <a href="mailto:lmoryakantha.ai24@rvce.edu.in" className="flex items-center text-gray-600 hover:text-gray-900">
                 <Mail className="h-4 w-4 mr-2" />
                 L Moryakantha
-              </a>
+              </a> */}
               <a href="https://github.com/MK-DEV369/HMS_Brain" className="flex items-center text-gray-600 hover:text-gray-900">
                 <Github className="h-4 w-4 mr-2" />
                 GitHub

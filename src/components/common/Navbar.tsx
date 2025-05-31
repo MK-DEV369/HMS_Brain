@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Activity, FileText, User2Icon, Menu, X, ArrowUpNarrowWide} from 'lucide-react';
+import { Brain, Activity, FileText, ArrowUpNarrowWide, Menu, X } from 'lucide-react';
+import { SignedIn, SignedOut, SignInButton, SignOutButton } from '@clerk/clerk-react';
 
 const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -17,15 +18,8 @@ const Navbar = () => {
             <span className="ml-2 text-lg font-semibold text-gray-900">HMS Brain Activity Monitor</span>
           </div>
 
-
           {/* Desktop Navigation */}
-          <div className="hidden md:flex space-x-4">
-            {/* <NavItem 
-              icon={<Activity />} 
-              text="Monitor" 
-              active={location.pathname === '/dashboard'}
-              to="/monitor"
-            /> */}
+          <div className="hidden md:flex space-x-4 items-center">
             <NavItem 
               icon={<Activity />} 
               text="Monitor" 
@@ -44,12 +38,20 @@ const Navbar = () => {
               active={location.pathname === '/reports'}
               to="/reports"
             />
-            <NavItem 
-              icon={<User2Icon />} 
-              text="Login"
-              active={location.pathname === '/login'}
-              to="/login"
-            />
+            <SignedOut>
+            <SignInButton mode="modal">
+              <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                Sign In
+              </span>
+            </SignInButton>
+          </SignedOut>
+            <SignedIn>
+              <SignOutButton>
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                  Sign Out
+                </span>
+              </SignOutButton>
+            </SignedIn>
           </div>
 
           {/* Mobile Menu Button */}
@@ -72,12 +74,6 @@ const Navbar = () => {
       {isMobileMenuOpen && (
         <div className="md:hidden">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            {/* <NavItem 
-              icon={<Activity />} 
-              text="Monitor" 
-              active={location.pathname === '/dashboard'}
-              to="/monitor"
-            /> */}
             <NavItem 
               icon={<Activity />} 
               text="Monitor" 
@@ -90,19 +86,26 @@ const Navbar = () => {
               active={location.pathname === '/analysis'}
               to="/analysis"
             />
-            
             <NavItem 
               icon={<FileText />} 
               text="Reports" 
               active={location.pathname === '/reports'}
               to="/reports"
             />
-            <NavItem 
-              icon={<User2Icon />} 
-              text="Login"
-              active={location.pathname === '/login'}
-              to="/login"
-            />
+            <SignedOut>
+              <SignInButton mode="modal">
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                  Sign In
+                </span>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <SignOutButton>
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                  Sign Out
+                </span>
+              </SignOutButton>
+            </SignedIn>
           </div>
         </div>
       )}

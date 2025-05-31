@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { FileUp, Download, BarChart2, PieChart as PieChartIcon, Activity } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
+import { BarChart2, PieChart as PieChartIcon, Activity } from 'lucide-react';
+import ConfusionMatrix from '../components/analysis/ConfusionMatrix';
 
 // Mock data for visualizations
 const featureImportanceData = [
@@ -20,14 +21,12 @@ const modelPerformanceData = [
   { name: 'Train Test Validation', value: 0.87 },
 ];
 
-const confusionMatrixData = [
-  { name: 'True Negatives', value: 145 },
-  { name: 'False Positives', value: 12 },
-  { name: 'False Negatives', value: 18 },
-  { name: 'True Positives', value: 156 }
-];
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+// Updated confusion matrix data for train/test comparison
+const confusionMatrixData = {
+  accuracy: { train: 0.91, test: 0.89 },
+  klDivergence: { train: 0.95, test: 0.92 },
+  trainTestValidation: { train: 0.90, test: 0.87 },
+};
 
 // Create clusters of data for the t-SNE visualization
 const generateClusterData = (centerX: number, centerY: number, label: string, count: number) => {
@@ -55,64 +54,57 @@ const tsneData = [
 export default function Analysis() {
   const [activeTab, setActiveTab] = useState('features');
   const [selectedModel, setSelectedModel] = useState('Random Forest');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploadedFile(file);
-      // In a real app, you would process the file here
-    }
-  };
 
   return (
-    <div className="flex flex-col space-y-6 p-6">
+    <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">ML Analysis Dashboard</h1>
-        <div className="flex space-x-4">
-          <select
-            className="bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500"
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-          >
-            <option>Random Forest</option>
-            <option>LSTM</option>
-            <option>CNN</option>
-            <option>XGBoost</option>
-            <option>SVM</option>
-          </select>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">
+          ML Analysis Dashboard
+        </h1>
+        <select 
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+        >
+          <option>Random Forest</option>
+          <option>LSTM</option>
+          <option>CNN</option>
+          <option>XGBoost</option>
+          <option>SVM</option>
+        </select>
       </div>
       
-      {uploadedFile && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
-          <span>File uploaded: {uploadedFile.name}</span>
-          <button className="text-green-700 hover:text-green-900">
-            <Download size={16} />
-          </button>
-        </div>
-      )}
-      
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="flex border-b">
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
           <button
-            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'features' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'features' 
+                ? 'border-blue-500 text-blue-600' 
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
             onClick={() => setActiveTab('features')}
           >
-            <BarChart2 size={16} />
-            <span>Feature Analysis</span>
+            <BarChart2 className="inline-block w-4 h-4 mr-2" />
+            Feature Analysis
           </button>
           <button
-            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'performance' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'performance' 
+                ? 'border-blue-500 text-blue-600' 
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
             onClick={() => setActiveTab('performance')}
           >
-            <PieChartIcon size={16} />
-            <span>Model Performance</span>
+            <Activity className="inline-block w-4 h-4 mr-2" />
+            Model Performance
           </button>
-        </div>
-        
-        <div className="p-6">
-          {activeTab === 'features' && (
+        </nav>
+      </div>
+      
+      {/* Tab Content */}
+      <div className="space-y-6">
+        {activeTab === 'features' && (
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <h3 className="text-lg font-medium mb-4">Feature Importance</h3>
@@ -174,91 +166,59 @@ export default function Analysis() {
               </div>
             </div>
           )}
-          
-          {activeTab === 'performance' && (
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-medium mb-4">Model Metrics</h3>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={modelPerformanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis domain={[0, 1]} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="value" fill="#8884d8" name="Score" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  The {selectedModel} model shows strong performance across all metrics, with particularly high precision (0.92) and AUC (0.94).
-                </p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-medium mb-4">Confusion Matrix</h3>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={confusionMatrixData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {confusionMatrixData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div className="bg-green-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-green-700">91.3%</div>
-                    <div className="text-sm text-green-600">Accuracy</div>
-                  </div>
-                  <div className="bg-blue-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-blue-700">92.9%</div>
-                    <div className="text-sm text-blue-600">KL Divergence</div>
-                  </div>
-                  <div className="bg-yellow-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-yellow-700">89.7%</div>
-                    <div className="text-sm text-yellow-600">Train Test Validation</div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4">
-                  <h5 className="text-sm font-medium text-gray-700 mb-1">Hyperparameters</h5>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Learning Rate</div>
-                      <div className="font-medium">0.001</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Batch Size</div>
-                      <div className="font-medium">32</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Epochs</div>
-                      <div className="font-medium">100</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Optimizer</div>
-                      <div className="font-medium">Adam</div>
-                    </div>
-                  </div>
-                </div>
-            </div>
-          )}
+        
+{activeTab === 'performance' && (
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="bg-white rounded-lg shadow-md p-6 flex flex-col">
+      <h3 className="text-xl font-bold text-gray-800 mb-4">
+        Model Metrics
+      </h3>
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={modelPerformanceData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis domain={[0, 1]} />
+            <Tooltip />
+            <Bar dataKey="value" fill="#10B981" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-sm text-gray-600 mt-4">
+        The {selectedModel} model shows strong performance across all metrics, with particularly high accuracy (0.89) and KL Divergence (0.92).
+      </p>
+      {/* Hyperparameters block moved here for full width and visual consistency */}
+      <div className="mt-8 w-full">
+        <h5 className="text-sm font-medium text-gray-700 mb-2">Hyperparameters</h5>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col items-center">
+            <div className="text-xs text-gray-500 mb-1">Learning Rate</div>
+            <div className="font-semibold text-base">0.001</div>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col items-center">
+            <div className="text-xs text-gray-500 mb-1">Batch Size</div>
+            <div className="font-semibold text-base">32</div>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col items-center">
+            <div className="text-xs text-gray-500 mb-1">Epochs</div>
+            <div className="font-semibold text-base">100</div>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col items-center">
+            <div className="text-xs text-gray-500 mb-1">Optimizer</div>
+            <div className="font-semibold text-base">Sankalp</div>
+          </div>
         </div>
+      </div>
+    </div>
+
+    {/* Updated Confusion Matrix Component */}
+    <ConfusionMatrix 
+      data={confusionMatrixData}
+      title="Train vs Test Performance"
+      className="lg:col-span-1"
+    />
+  </div>
+)}
       </div>
     </div>
   );

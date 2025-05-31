@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Bell, Activity, User, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Bell, Activity, AlertCircle, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL, WS_BASE_URL } from '../../utils/constants';
-import { processEEGData, calculateFrequencyBands, ProcessedEEGPoint } from '../../utils/dataProcessing';
-import { useUser } from '../../context/UserContext';
+import { processEEGData, ProcessedEEGPoint } from '../../utils/dataProcessing';
 import PatientSelector from './PatientSelector';
 import { Patient, LiveMonitorProps } from '../../utils/types';
+import emergency from "../../context/emergency.mp3";
+import { useClerk } from '@clerk/clerk-react';
 import { predictEEG } from "../../services/api";
 
 // Classification result options
@@ -18,7 +19,12 @@ const classificationResults = [
   { id: 5, status: "Others", color: "bg-gray-400", severity: "Low" }
 ];
 
-export default function LiveMonitor({eegData}: LiveMonitorProps) {
+interface ExtendedLiveMonitorProps extends LiveMonitorProps {
+  onAlertMedicalStaff?: () => void;
+}
+
+export default function LiveMonitor({ eegData, onAlertMedicalStaff }: ExtendedLiveMonitorProps) {
+  const { user } = useClerk();
   const [patients, setPatients] = useState([]);
   const [classification, setClassification] = useState(classificationResults[0]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -27,6 +33,7 @@ export default function LiveMonitor({eegData}: LiveMonitorProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
+  const [spectrogramData, setSpectrogramData] = useState<ProcessedEEGPoint[]>([]);
   const [confidenceScores, setConfidenceScores] = useState({
     Seizure: 0,
     LPD: 0,
@@ -42,70 +49,111 @@ export default function LiveMonitor({eegData}: LiveMonitorProps) {
   });
   
   const socketRef = useRef<WebSocket | null>(null);
-  const { currentUser } = useUser();
-  
-  // const handleLivePrediction = async (filename: string) => {
-  //   if (!selectedPatient) return;
-  //   try {
-  //     setLoading(true);
-  //     const result = await predictEEG(filename); // Call the backend API
-  //     console.log('Prediction result:', result);
-  //     const response = await fetch(`${API_BASE_URL}/eeg/data/${selectedPatient?.id}/`);
-  //     console.log('Response (Alpha Beta Gamma)', response);
-  //     if (!response.ok) {
-  //       throw new Error("Failed to fetch EEG data");
-  //     }
-  //     const result2 = await response.json(); //Confidence Scores
-  //     const classId = result.prediction;
-  //     setConfidenceScores(result.confidence_scores);
+  const eegIntervalRef = useRef<number | null>(null);
+  const spectrogramIntervalRef = useRef<number | null>(null);
+// Enhanced Alert Medical Staff function
+const alertMedicalStaff = async () => {
+  if (!selectedPatient || !user) return;    
+  try {
+    const playEmergencySound = async () => {
+      try {
+        const audio = new Audio(emergency);
+        audio.volume = 0.8;
+        await audio.play();
+      } catch (err) {
+        console.warn(`Failed to play emergency sound:`, err);
+      }
+    };     
+    await playEmergencySound();      
+    const alertMessage = `🚨 MEDICAL EMERGENCY ALERT 🚨\n\nPatient: ${selectedPatient.name}\nRoom: ${selectedPatient.room}\nStatus: ${classification.status}\nSeverity: ${classification.severity}\nTime: ${new Date().toLocaleString()}\n\nMedical staff will be notified immediately.`;
+    alert(alertMessage);
+    const phoneNumber = user.phoneNumbers?.[0]?.phoneNumber;
+    if (!phoneNumber) {
+      throw new Error('User phone number not found');
+    }
 
-  //     if (classId === 0) setStatus('normal');
-  //     else if (classId < 4) setStatus('warning');
-  //     else setStatus('critical');
+    const alertResponse = await fetch(`${API_BASE_URL}/eeg/alerts/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${user?.id}`
+      },
+      body: JSON.stringify({
+        patient_id: selectedPatient.id,
+        patient_name: selectedPatient.name,
+        room: selectedPatient.room,
+        alert_type: classification.status,
+        message: `Emergency alert: ${classification.status} detected for patient ${selectedPatient.name}`,
+        severity: classification.severity,
+        timestamp: new Date().toISOString(),
+        doctor_id: user.id,
+        confidence_scores: confidenceScores,
+        phone_number: phoneNumber
+      })
+    });
 
-  //     const labelNames = ['seizure', 'lpd', 'gpd', 'lrda', 'grda', 'others'];
-  //     const label = labelNames[classId];
-  //     const alertType = classId > 3 ? 'critical' : classId > 0 ? 'warning' : 'info';
+    if (!alertResponse.ok) {
+      throw new Error('Failed to send alert to system');
+    }
 
-  //     if (classId !== 0) {
-  //       setAlerts(prev => [
-  //         ...prev,
-  //         {
-  //           id: Date.now().toString(),
-  //           type: alertType,
-  //           message: `Detected: ${label.toUpperCase()}`,
-  //           timestamp: new Date(),
-  //         },
-  //       ]);
-  //     }
-  //       // Update EEG data for visualization
-  //     const eegDataFromBackend = result2.eegData || []; // Ensure backend returns EEG data
-  //     setEegData(prevData => [
-  //       ...prevData.slice(-50), // Keep the last 50 points
-  //       ...eegDataFromBackend.map((dataPoint: any, index: number) => ({
-  //         time: prevData.length + index,
-  //         amplitude: dataPoint.amplitude,
-  //         alpha: dataPoint.alpha,
-  //         beta: dataPoint.beta,
-  //       })),
-  //     ]);
-  //   } catch (error) {
-  //     console.error('Prediction failed:', error);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
+    console.log('Medical alert sent successfully');      
+  } catch (error) {
+    console.error('❌ Error sending medical alert:', error);
+    alert('Failed to send medical alert. Please contact medical staff directly.');
+  }
+};
 
-  // Real-time timer and prediction trigger
-  // useEffect(() => {
-  //   const interval = setInterval(() => {
-  //     setCurrentTime(new Date().toLocaleTimeString());
-  //     if (selectedPatient) {
-  //       handleLivePrediction(`${selectedPatient.id}.parquet`); // Use patient-specific EEG file
-  //     }
-  //   }, 5000);
-  //   return () => clearInterval(interval);
-  // }, [selectedPatient]);
+  // Fetch EEG data from numpy files
+  const fetchEEGFromNumpy = async (patientId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/eeg/numpy/eeg/${patientId}/`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch EEG numpy data');
+      }
+      const data = await response.json();
+      
+      // Convert numpy data to ProcessedEEGPoint format
+      const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => ({
+        time: index,
+        amplitude: point.amplitude || point[0] || Math.random() * 100 - 50,
+        alpha: point.alpha || point[1] || Math.random() * 20,
+        beta: point.beta || point[2] || Math.random() * 15,
+        gamma: point.gamma || Math.random() * 10,
+        theta: point.theta || Math.random() * 25,
+        delta: point.delta || Math.random() * 30
+      }));
+      
+      setEEGData(prevData => [...prevData.slice(-50), ...processedData.slice(-20)]);
+    } catch (error) {
+      console.error('Error fetching EEG numpy data:', error);
+    }
+  };
+
+  // Fetch Spectrogram data from numpy files
+  const fetchSpectrogramFromNumpy = async (patientId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/eeg/numpy/spec/${patientId}/`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch spectrogram numpy data');
+      }
+      const data = await response.json();
+      
+      // Convert numpy spectrogram data to ProcessedEEGPoint format
+      const processedData: ProcessedEEGPoint[] = data.spec_data.map((point: any, index: number) => ({
+        time: index,
+        amplitude: point.intensity || point[0] || Math.random() * 100,
+        alpha: point.alpha_power || point[1] || Math.random() * 50,
+        beta: point.beta_power || point[2] || Math.random() * 40,
+        gamma: point.gamma_power || Math.random() * 30,
+        theta: point.theta_power || Math.random() * 35,
+        delta: point.delta_power || Math.random() * 45
+      }));
+      
+      setSpectrogramData(prevData => [...prevData.slice(-50), ...processedData.slice(-20)]);
+    } catch (error) {
+      console.error('Error fetching spectrogram numpy data:', error);
+    }
+  };
 
   // Fetch available patients
   useEffect(() => {
@@ -116,7 +164,7 @@ export default function LiveMonitor({eegData}: LiveMonitorProps) {
           throw new Error('Failed to fetch patients');
         }
         const data = await response.json();
-        console.log('Fetched patients:', data); // Debugging
+        console.log('Fetched patients:', data);
         setPatients(data);
       } catch (err) {
         console.error('Error fetching patients:', err);
@@ -132,7 +180,35 @@ export default function LiveMonitor({eegData}: LiveMonitorProps) {
     
     return () => clearInterval(clockInterval);
   }, []);
-  
+
+  // Real-time data fetching from numpy files
+  useEffect(() => {
+    if (!selectedPatient || !isLive) {
+      if (eegIntervalRef.current) clearInterval(eegIntervalRef.current);
+      if (spectrogramIntervalRef.current) clearInterval(spectrogramIntervalRef.current);
+      return;
+    }
+
+    // Fetch EEG data every 2 seconds
+    eegIntervalRef.current = setInterval(() => {
+      fetchEEGFromNumpy(selectedPatient.id.toString());
+    }, 2000);
+
+    // Fetch Spectrogram data every 3 seconds
+    spectrogramIntervalRef.current = setInterval(() => {
+      fetchSpectrogramFromNumpy(selectedPatient.id.toString());
+    }, 3000);
+
+    // Initial fetch
+    fetchEEGFromNumpy(selectedPatient.id.toString());
+    fetchSpectrogramFromNumpy(selectedPatient.id.toString());
+
+    return () => {
+      if (eegIntervalRef.current) clearInterval(eegIntervalRef.current);
+      if (spectrogramIntervalRef.current) clearInterval(spectrogramIntervalRef.current);
+    };
+  }, [selectedPatient, isLive]);
+
   // Fetch patient details when selected patient changes
   useEffect(() => {
     const fetchPatientDetails = async () => {
@@ -156,62 +232,60 @@ export default function LiveMonitor({eegData}: LiveMonitorProps) {
     
     fetchPatientDetails();
   }, [selectedPatient]);
-  
-useEffect(() => {
-  if (!selectedPatient || !isLive) return;
 
-  const wsUrl = `${WS_BASE_URL}/ws/eeg/${selectedPatient.id}/`;
-  socketRef.current = new WebSocket(wsUrl);
-
-  socketRef.current.onopen = () => {
-    console.log("WebSocket connected");
-    setIsConnected(true);
-    setError(null);
-  };
-
-  socketRef.current.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-
-    if (message.type === "eeg_data") {
-      const processedData = processEEGData(message.data);
-      setEEGData((prevData) => [...prevData, ...processedData].slice(-100));
-    } else if (message.type === "classification") {
-    const { classification_id, confidence_scores } = message;
-    const matchedClass = classificationResults.find(c => c.id === classification_id) || classificationResults[0];
-    setClassification(matchedClass);
-
-    setConfidenceScores({
-      Seizure: confidence_scores?.seizure ?? 0,
-      LPD: confidence_scores?.lpd ?? 0,
-      GPD: confidence_scores?.gpd ?? 0,
-      LRDA: confidence_scores?.lrda ?? 0,
-      GRDA: confidence_scores?.grda ?? 0,
-      Others: confidence_scores?.others ?? 0,
-    });
-  } else if (message.type === "vital_signs") {
-      setVitalSigns({
-        heartRate: message.data?.heart_rate ?? "--",
-        temperature: message.data?.temperature ?? "--",
-        bloodPressure: message.data?.blood_pressure ?? "--"
-      });
-    }
-  };
-
-  socketRef.current.onerror = (e) => {
-    console.error("WebSocket error:", e);
-    setIsConnected(false);
-  };
-
-  socketRef.current.onclose = () => {
-    console.log("WebSocket closed");
-    setIsConnected(false);
-  };
-
-  return () => {
-    socketRef.current?.close();
-  };
-}, [selectedPatient, isLive]);
-
+  // WebSocket connection for real-time updates
+  useEffect(() => {
+    if (!selectedPatient || !isLive) return;
+    
+    const wsUrl = `${WS_BASE_URL}/ws/eeg/${selectedPatient.id}/`;
+    socketRef.current = new WebSocket(wsUrl);
+    
+    socketRef.current.onopen = () => {
+      console.log("WebSocket connected");
+      setIsConnected(true);
+      setError(null);
+    };
+    
+    socketRef.current.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "eeg_data") {
+        const processedData = processEEGData(message.data);
+        setEEGData((prevData) => [...prevData, ...processedData].slice(-100));
+      } else if (message.type === "classification") {
+        const { classification_id, confidence_scores } = message;
+        const matchedClass = classificationResults.find(c => c.id === classification_id) || classificationResults[0];
+        setClassification(matchedClass);
+        setConfidenceScores({
+          Seizure: confidence_scores?.seizure ?? 0,
+          LPD: confidence_scores?.lpd ?? 0,
+          GPD: confidence_scores?.gpd ?? 0,
+          LRDA: confidence_scores?.lrda ?? 0,
+          GRDA: confidence_scores?.grda ?? 0,
+          Others: confidence_scores?.others ?? 0,
+        });
+      } else if (message.type === "vital_signs") {
+        setVitalSigns({
+          heartRate: message.data?.heart_rate ?? "--",
+          temperature: message.data?.temperature ?? "--",
+          bloodPressure: message.data?.blood_pressure ?? "--"
+        });
+      }
+    };
+    
+    socketRef.current.onerror = (e) => {
+      console.error("WebSocket error:", e);
+      setIsConnected(false);
+    };
+    
+    socketRef.current.onclose = () => {
+      console.log("WebSocket closed");
+      setIsConnected(false);
+    };
+    
+    return () => {
+      socketRef.current?.close();
+    };
+  }, [selectedPatient, isLive]);
   
   // Handle live toggle
   const toggleLiveMode = () => {
@@ -219,67 +293,11 @@ useEffect(() => {
     setIsLive(newLiveState);
     
     if (!newLiveState && socketRef.current) {
-      // Close connection when pausing
       socketRef.current.close();
       setIsConnected(false);
     }
   };
   
-  // Send alert to medical staff
-  const alertMedicalStaff = async () => {
-  if (!selectedPatient) return;
-
-  // Play emergency sound
-  const audio = new Audio('/siren.mp3');
-  audio.play().catch(err => console.error('Audio play failed:', err));
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/eeg/alerts/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentUser?.token}`
-      },
-      body: JSON.stringify({
-        patient_id: selectedPatient,
-        alert_type: classification.id,
-        message: `Alert: ${classification.status} detected for patient`,
-        severity: classification.severity
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to send alert');
-    }
-
-    // 🚨 Optional: Trigger SMS via backend endpoint
-    const smsResponse = await fetch(`${API_BASE_URL}/notify/sms/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentUser?.token}`
-      },
-      body: JSON.stringify({
-        phone_number: "+91xxxxxxxxxx",  // replace with config or backend-assigned number
-        message: `🚨 Urgent: ${classification.status} detected for patient in Room ${selectedPatient?.room}.`
-      })
-    });
-
-    if (!smsResponse.ok) {
-      console.warn("Failed to send SMS");
-    }
-
-    alert('Alert sent successfully');
-    console.log('Alert + SMS sent successfully');
-  } catch (err) {
-    console.error('Error sending alert:', err);
-  }
-};
-
-  
-  // Calculate frequency bands for visualization
-  const frequencyData = calculateFrequencyBands(eegDataState.slice(-20));
-
   return (
     <div className="flex flex-col space-y-4 p-6 h-full">
       {/* Header with patient selector and time */}
@@ -300,7 +318,7 @@ useEffect(() => {
         <div className="flex items-center space-x-4"> 
           <div className="text-lg font-bold">{currentTime}</div>
           <div className={`flex items-center px-3 py-1 rounded-lg text-xs ${isConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-            {isConnected ? 'CONNECTED' : 'DISCONNECTED'} {/* Websocket Connection for CONNECTED OR DISCONNECTED */}
+            {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
           </div>
           <button
             className={`px-4 py-2 rounded-lg ${isLive ? 'bg-green-500 text-white' : 'bg-gray-300'}`}
@@ -310,6 +328,7 @@ useEffect(() => {
           </button>
         </div>
       </div>      
+      
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertTriangle size={16} />
@@ -319,9 +338,8 @@ useEffect(() => {
       
       {/* Main content grid */}
       <div className="grid grid-cols-12 gap-4 h-full">
-  {/* Left sidebar with status */}
-  <div className="col-span-3 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
-    <div className="col-span-1 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
+        {/* Left sidebar with status */}
+        <div className="col-span-3 bg-gray-50 rounded-lg p-4 flex flex-col space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-bold">Status</h3>
             <Activity className="text-blue-500" />
@@ -351,152 +369,107 @@ useEffect(() => {
               <span>{vitalSigns.bloodPressure}</span>
             </div>
           </div>
+          
           <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-bold mb-2">ML Classification Confidence</h3>
-              <div className="space-y-2">
-                {Object.entries(confidenceScores).map(([label, score]) => (
-                  <div key={label}>
-                    <div className="flex justify-between">
-                      <span>{label}</span>
-                      <span>{score.toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="bg-blue-500 h-2.5 rounded-full"
-                        style={{ width: `${score}%` }}
-                      ></div>
-                    </div>
+            <h3 className="font-bold mb-2">ML Classification Confidence</h3>
+            <div className="space-y-2">
+              {Object.entries(confidenceScores).map(([label, score]) => (
+                <div key={label}>
+                  <div className="flex justify-between">
+                    <span>{label}</span>
+                    <span>{score.toFixed(1)}%</span>
                   </div>
-                ))}
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className="bg-blue-500 h-2.5 rounded-full"
+                      style={{ width: `${score}%` }}
+                    ></div>
+                  </div>
                 </div>
+              ))}
             </div>
+          </div>
           
           <div className="mt-auto">
             <button 
-              className="w-full bg-blue-500 text-white py-2 rounded-lg flex items-center justify-center space-x-2"
-              onClick={alertMedicalStaff}
-              disabled={!selectedPatient || !isConnected}
+              data-alert-button
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg flex items-center justify-center space-x-2 font-bold transition-all duration-200 shadow-lg hover:shadow-xl"
+              onClick={onAlertMedicalStaff || alertMedicalStaff}
+              disabled={!selectedPatient}
             >
-              <Bell />
+              <Bell className="animate-pulse" />
               <span>Alert Medical Staff</span>
             </button>
           </div>
         </div>
-  </div>
-
-  {/* Right content: EEG + Spectrogram */}
-  <div className="col-span-9 flex flex-col space-y-4">
-    {/* EEG Chart */}
-    <div className="bg-white rounded-lg shadow p-4 w-full">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
-      </div>
-      <div className="h-64 w-full">
-        {eegDataState.length === 0 ? (
-          <div className="h-full w-full flex items-center justify-center text-gray-500">
-            {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
+        
+        {/* Right content: EEG + Spectrogram */}
+        <div className="col-span-9 flex flex-col space-y-4">
+          {/* EEG Chart */}
+          <div className="bg-white rounded-lg shadow p-4 w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Real-time EEG Monitoring</h2>
+              <span className="text-sm text-gray-500">
+                Data from: {selectedPatient ? `eeg/${selectedPatient.id}.npy` : 'No patient selected'}
+              </span>
+            </div>
+            <div className="h-64 w-full">
+              {eegDataState.length === 0 ? (
+                <div className="h-full w-full flex items-center justify-center text-gray-500">
+                  {selectedPatient ? 'Loading EEG data from numpy file...' : 'Select a patient to view EEG data'}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={eegDataState}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" />
+                    <YAxis domain={['auto', 'auto']} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="gamma" stroke="#ff7300" strokeWidth={1} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={eegDataState}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis domain={['auto', 'auto']} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
-
-    {/* Spectrogram */}
-    <div className="bg-white rounded-lg shadow p-4 w-full">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Real-time Spectrogram Monitoring</h2>
-      </div>
-      <div className="h-64 w-full">
-        {eegDataState.length === 0 ? (
-          <div className="h-full w-full flex items-center justify-center text-gray-500">
-            {isConnected ? 'Waiting for EEG data...' : 'Connect to patient to view EEG data'}
+          
+          {/* Spectrogram */}
+          <div className="bg-white rounded-lg shadow p-4 w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Real-time Spectrogram Monitoring</h2>
+              <span className="text-sm text-gray-500">
+                Data from: {selectedPatient ? `spec/${selectedPatient.id}.npy` : 'No patient selected'}
+              </span>
+            </div>
+            <div className="h-64 w-full">
+              {spectrogramData.length === 0 ? (
+                <div className="h-full w-full flex items-center justify-center text-gray-500">
+                  {selectedPatient ? 'Loading spectrogram data from numpy file...' : 'Select a patient to view spectrogram data'}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={spectrogramData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" />
+                    <YAxis domain={['auto', 'auto']} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="amplitude" name="Intensity" stroke="#e74c3c" strokeWidth={2} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="alpha" name="Alpha Power" stroke="#27ae60" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="beta" name="Beta Power" stroke="#f39c12" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="gamma" name="Gamma Power" stroke="#9b59b6" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="theta" name="Theta Power" stroke="#3498db" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="delta" name="Delta Power" stroke="#34495e" strokeWidth={1} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={eegDataState}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
-              <YAxis domain={['auto', 'auto']} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="amplitude" stroke="#8884d8" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="alpha" stroke="#82ca9d" strokeWidth={1} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="beta" stroke="#ffc658" strokeWidth={1} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+        </div>
       </div>
-    </div>
-  </div>
-</div>
-
     </div>
   );
 }
-
-{/* <div>
-                  <div className="flex justify-between">
-                    <span>Seizure</span>
-                    <span>{classification.id === 0 ? confidenceScores.seizure : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-green-500 h-2.5 rounded-full" style={{ width: `${classification.id === 0 ? confidenceScores.seizure :'N'} %` }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>LPD</span>
-                    <span>{classification.id === 1 ? confidenceScores.lpd : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className=" bg-purple-800 h-2.5 rounded-full" style={{ width: `${classification.id === 1 ? confidenceScores.lpd : 'N'} %` }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>GPD</span>
-                    <span>{classification.id === 2 ? confidenceScores.gpd : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-red-500 h-2.5 rounded-full" style={{ width: `${classification.id === 2 ? confidenceScores.gpd : 'N'} %` }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>LRDA</span>
-                    <span>{classification.id === 3 ? confidenceScores.lrda : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-orange-700 h-2.5 rounded-full" style={{ width: `${classification.id === 3 ? confidenceScores.lrda : 'N'} %` }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>GRDA</span>
-                    <span>{classification.id === 4 ? confidenceScores.grda : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-yellow-500 h-2.5 rounded-full" style={{ width: `${classification.id === 4 ? confidenceScores.grda : 'N'} %` }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>Others</span>
-                    <span>{classification.id === 5 ? confidenceScores.others : "NA"} %</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div className="bg-blue-700 h-2.5 rounded-full" style={{ width: `${classification.id === 5 ? confidenceScores.others : 'N'} %` }}></div>
-                  </div>
-                </div> */}

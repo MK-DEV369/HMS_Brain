@@ -87,22 +87,15 @@ const Reports: React.FC = () => {
       alert('Please select a patient first');
       return;
     }
-
-    // Create a hidden iframe for PDF generation
-    const printFrame = document.createElement('iframe');
+    const printFrame = document.createElement('iframe'); // Create a hidden iframe for PDF generation
     printFrame.style.position = 'absolute';
     printFrame.style.top = '-9999px';
     printFrame.style.left = '-9999px';
     document.body.appendChild(printFrame);
-
-    // Get the content to print
-    const contentToPrint = printRef.current;
+    const contentToPrint = printRef.current; // Get the content to print
     if (!contentToPrint) return;
-
-    // Write the content to the iframe
-    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document; // Write the content to the iframe
     if (!frameDoc) return;
-
     frameDoc.open();
     frameDoc.write(`
       <!DOCTYPE html>
@@ -200,18 +193,18 @@ const Reports: React.FC = () => {
     `);
     frameDoc.close();
 
-    // Set up to save as PDF after the iframe loads
-    printFrame.onload = () => {
+    
+    printFrame.onload = () => {// Set up to save as PDF after the iframe loads
       try {
-        // For PDF download, use the browser's print dialog with "Save as PDF" option
-        const win = printFrame.contentWindow;
+        
+        const win = printFrame.contentWindow;// For PDF download, use the browser's print dialog with "Save as PDF" option
         if (win) {
           win.focus();
           win.print();
         }
         
-        // Wait for print dialog to close before removing the iframe
-        setTimeout(() => {
+        
+        setTimeout(() => {// Wait for print dialog to close before removing the iframe
           document.body.removeChild(printFrame);
         }, 1000);
       } catch (error) {
@@ -221,8 +214,8 @@ const Reports: React.FC = () => {
     };
   };
 
-  // Function to handle printing
-  const handlePrint = () => {
+  
+  const handlePrint = () => {// Function to handle printing
     if (!selectedPatient) {
       alert('Please select a patient first');
       return;
@@ -279,7 +272,6 @@ const Reports: React.FC = () => {
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
   Object.entries(classificationColors).forEach(([key, value]) => {
-  const ClassName = `bg-${key}-700 text-white`;
   document.documentElement.style.setProperty(`--${key}-700`, value);
   }); 
   return (
@@ -455,9 +447,6 @@ const Reports: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Confidence
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -481,11 +470,6 @@ const Reports: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {result.confidence}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <button className="text-blue-600 hover:text-blue-900 transition-colors duration-200">
-                            Select
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -729,7 +713,6 @@ const Reports: React.FC = () => {
                   </div>
                 )}
               </div>
-
               <div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-4">Doctor's Notes</h2>
                 <div className="bg-gray-50 p-4 rounded-lg min-h-32 border border-gray-200">

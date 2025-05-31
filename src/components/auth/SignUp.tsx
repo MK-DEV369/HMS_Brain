@@ -1,13 +1,13 @@
 import React from 'react';
-import { SignIn } from '@clerk/clerk-react';
+import { SignUp } from '@clerk/clerk-react';
 
-const Login: React.FC = () => {
+const Signup: React.FC = () => {
   return (
-    <div className="flex justify-evenly transition-colors duration-700">
+    <div className="flex justify-evenly transition-colors duration-700 min-h-screen items-center bg-gray-50">
       <div className="w-full max-w-4xl flex flex-row bg-white rounded-2xl shadow-2xl p-10 animate-fade-in transition-all duration-700">
         <div className="flex-grow pr-8">
           <h1 className="text-4xl font-extrabold text-blue-800 mb-8 tracking-tight transition-colors duration-500">
-            Doctor Authentication
+            Doctor Registration
           </h1>
           <ul className="space-y-6 text-lg">
             <li className="bg-blue-50 rounded-lg p-4 shadow-sm transition-transform duration-300 hover:scale-105">
@@ -29,12 +29,23 @@ const Login: React.FC = () => {
           </ul>
         </div>
         <div className="w-40" />
+        <div className="hidden md:block w-[2px] bg-gray-200 mx-8" />
         <div className="flex items-center justify-center min-w-[340px]">
-          <SignIn path="/login" routing="path" signUpUrl="/login" />
+          <SignUp
+            path="/signup"
+            routing="path"
+            signInUrl="/signin"
+            appearance={{
+              elements: {
+                card: "shadow-none bg-transparent",
+                formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
+              }
+            }}
+          />
         </div>
       </div>
     </div>
   );
 };
 
-export default Login;
+export default Signup;

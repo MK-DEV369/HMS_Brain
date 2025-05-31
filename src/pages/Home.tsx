@@ -14,10 +14,10 @@ const Home: React.FC = () => {
   }, []);
 
   const teamMembers = [
-    { name: "L Moryakantha", usn: "1RV24AI406", role: "Frontend Developer", avatar: "🧠" },
-    { name: "Shreyas Bharadwaj", usn: "1RV23AI096", role: "Backend Developer", avatar: "💻" },
-    { name: "Vijaykumar BK", usn: "1RV23AI118", role: "AI/ML Lead", avatar: "⚡" },
-    { name: "Sankalp Khamesra", usn: "1RV23AI086", role: "Data Scientist", avatar: "📊" }
+    { name: "L Moryakantha", usn: "1RV24AI406", linkedin: "https://www.linkedin.com/in/l-morya-kantha/", avatar: "🧠" },
+    { name: "Shreyas Bharadwaj", usn: "1RV23AI096", linkedin: "https://www.linkedin.com/in/shreyas-bharadwaj-76bab82b7/", avatar: "💻" },
+    { name: "Vijaykumar BK", usn: "1RV23AI118", linkedin: "https://www.linkedin.com/in/vijaykumarbk7/", avatar: "⚡" },
+    { name: "Sankalp Khamesra", usn: "1RV23AI086", linkedin: "https://www.linkedin.com/in/sankalp-khamesra-8986a02a3/", avatar: "📊" }
   ];
 
   const features = [
@@ -111,6 +111,14 @@ const Home: React.FC = () => {
               <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-500 to-cyan-500 bg-clip-text text-transparent">
                 Project Overview
               </h2>
+              {/* Sign In as a Doctor CTA */}
+              <a
+                href="/signin"
+                className="ml-auto flex items-center px-4 py-2 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200 shadow"
+                style={{ marginLeft: 'auto' }}
+              >
+                Sign In as a Doctor for More Details
+              </a>
             </div>
             <p className="text-lg text-gray-600 leading-relaxed mb-8">
               The HMS Harmful Brain Activity Classification project revolutionizes neurological care by leveraging 
@@ -133,6 +141,7 @@ const Home: React.FC = () => {
                 <div className="text-gray-600">Continuous Monitoring</div>
               </div>
             </div>
+            
           </div>
 
           {/* Team Section */}
@@ -156,7 +165,14 @@ const Home: React.FC = () => {
                       {member.avatar}
                     </div>
                     <h3 className="text-xl font-bold mb-2 text-gray-800">{member.name}</h3>
-                    <p className="text-purple-500 font-medium mb-2">{member.role}</p>
+                    <a
+                      href={member.linkedin}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-500 font-medium mb-2 hover:underline inline-block break-all"
+                    >
+                      LinkedIn
+                    </a>
                     <p className="text-gray-600 text-sm font-mono">{member.usn}</p>
                   </div>
                 </div>
