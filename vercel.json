@@ -4,5 +4,22 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "builds": [
+    {
+      "src": "backend/eeg_app/**/*.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/eeg_app/$1"
+    }
+  ],
+  "functions": {
+    "backend/eeg_app": {
+      "includeFiles": "backend/intelligence/preprocessed/**/*"
+    }
+  }
 }

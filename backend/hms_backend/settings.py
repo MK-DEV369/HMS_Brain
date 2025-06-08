@@ -26,8 +26,14 @@ SECRET_KEY = "django-insecure-@te*2)qh&9n8p^m_t@b$x@n!qtwh)ic2la5(fsbqm3*$8sm@5u
 DEBUG = True
 
 ALLOWED_HOSTS = []
+import os
+# Define paths relative to the base directory
+EEG_DATA_PATH = os.path.join(BASE_DIR, "intelligence/preprocessed/eeg/")
+SPEC_DATA_PATH = os.path.join(BASE_DIR, "intelligence/preprocessed/spec/")
 
-
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 # Application definition
 
 INSTALLED_APPS = [

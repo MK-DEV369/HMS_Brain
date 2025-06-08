@@ -7,5 +7,5 @@ urlpatterns = [
     path('eeg/patients/<str:patient_id>/', PatientDetailsView.as_view(), name='patient_details'), # remove eeg if necessary
     path('data/<str:patient_id>/', EEGDataView.as_view(), name='eeg_data'),
     path('spec/<str:patient_id>/', SPECDataView.as_view(), name='spec_data'),
-    path('eeg/alerts/', AlertMedicalStaffView.as_view(), name='alert_medical_staff'),
+    path('alerts/', AlertMedicalStaffView.as_view(), name='alert_medical_staff'),
 ]

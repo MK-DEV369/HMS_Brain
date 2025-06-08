@@ -18,14 +18,13 @@ from .patient_generator import generate_patient_data
 import base64
 import numpy as np
 import tempfile
+from twilio.rest import Client
+from twilio.base.exceptions import TwilioException
 from intelligence.models.XGBoost.xgboost import xgb_model_manager
-#from eeg_app.utils.feature_extraction import extractFeatures
 
-model = tf.keras.models.load_model("backend\eeg_app\model.keras")
 SPECTROGRAM_NAMES = ['LL', 'LP', 'RP', 'RR']
-EEG_DATA_PATH = os.path.join("E:/4th SEM Data/HMS_Main_EL/HMS-Brian/project/backend/intelligence/preprocessed/eeg/")
-SPEC_DATA_PATH = os.path.join("E:/4th SEM Data/HMS_Main_EL/HMS-Brian/project/backend/intelligence/preprocessed/spec/")
-
+EEG_DATA_PATH = settings.EEG_DATA_PATH
+SPEC_DATA_PATH = settings.SPEC_DATA_PATH
 
 class EEGDataView(APIView):
     def get(self, request, patient_id):
@@ -215,28 +214,59 @@ class PatientDetailsView(APIView):
 
 logger = logging.getLogger(__name__)
 
-import requests
-
-def send_sms_india(phone_number: str, sms_message: str) -> bool:
+def send_sms_twilio(phone_number: str, sms_message: str) -> bool:
+    """
+    Send SMS using Twilio
+    """
     try:
-        url = "https://www.fast2sms.com/dev/bulkV2"
-        headers = {
-            "authorization":"QOKz5mce0IVrAv9B3jMgohs8EpWXZRGDfNHYy6duSLFn47bkCPVyzGRxcLQEisBNj6o07kO1d9wUYfnK",
-            'Content-Type': "application/x-www-form-urlencoded",
-            'Cache-Control': "no-cache",
-        }
-        payload = {
-            "route": "q",
-            "message": sms_message,
-            "schedule_time": None,
-            "flash": 0,
-            "numbers": phone_number,
-        }
-        response = requests.request("POST", url, data=payload, headers=headers)
-        print(response.text)
-        return response.status_code == 200
+        # Get Twilio credentials from environment
+        account_sid = os.getenv('TWILIO_ACCOUNT_SID')
+        auth_token = os.getenv('TWILIO_AUTH_TOKEN')
+        from_number = os.getenv('TWILIO_PHONE_NUMBER')
+        
+        print(f"🔍 Debug - Account SID exists: {bool(account_sid)}")
+        print(f"🔍 Debug - Auth Token exists: {bool(auth_token)}")
+        print(f"🔍 Debug - From Number: {from_number}")
+        
+        if not all([account_sid, auth_token, from_number]):
+            logger.error("❌ Missing Twilio credentials in environment variables")
+            print("❌ Missing Twilio credentials in environment variables")
+            return False
+        
+        # Initialize Twilio client
+        client = Client(account_sid, auth_token)
+        
+        # Format phone number - Twilio needs full international format
+        if not phone_number.startswith('+'):
+            # Assume Indian number if no country code
+            if phone_number.startswith('91'):
+                phone_number = '+' + phone_number
+            else:
+                phone_number = '+91' + phone_number
+        
+        print(f"🔍 Debug - Formatted phone number: {phone_number}")
+        print(f"🔍 Debug - Message length: {len(sms_message)} chars")
+        
+        # Send SMS
+        message = client.messages.create(
+            body=sms_message,
+            from_=from_number,
+            to=phone_number
+        )
+        
+        logger.info(f"✅ SMS sent successfully via Twilio. SID: {message.sid}")
+        print(f"✅ SMS sent successfully via Twilio. SID: {message.sid}")
+        return True
+        
+    except TwilioException as e:
+        logger.error(f"❌ Twilio API error: {e}")
+        print(f"❌ Twilio API error: {e}")
+        return False
     except Exception as e:
-        print(f"❌ Failed to send SMS via Fast2SMS: {e}")
+        logger.error(f"❌ Failed to send SMS via Twilio: {e}")
+        print(f"❌ Failed to send SMS via Twilio: {e}")
+        import traceback
+        print(f"🔍 Full traceback: {traceback.format_exc()}")
         return False
 
 
@@ -256,20 +286,50 @@ class AlertMedicalStaffView(APIView):
             confidence_scores = data.get("confidence_scores")
             phone_number = data.get("phone_number")
 
-            # Log or save to DB (optional):
+            # Log the emergency alert
             logger.info(f"🚨 Emergency alert for Patient {patient_name} (Room {room}) by Doctor {doctor_id}")
 
-            # Send SMS using Fast2SMS
+            # Send SMS using Twilio
             if phone_number:
-                sms_message = f"Alert: {alert_type}\nPatient: {patient_name}\nRoom: {room}\nSeverity: {severity}\nMessage: {message}"
-                sms_sent = send_sms_india(phone_number, sms_message)
-                if sms_sent:
-                    logger.info(f"✅ SMS sent successfully to {phone_number}")
-                else:
-                    logger.error(f"❌ Failed to send SMS to {phone_number}")
+                sms_message = f"""🚨 MEDICAL EMERGENCY ALERT 🚨
 
-            return Response({"status": "success", "message": "Medical alert received"}, status=status.HTTP_200_OK)
+Patient: {patient_name}
+Room: {room}
+Alert: {alert_type}
+Severity: {severity}
+Time: {timestamp}
+
+Message: {message}
+
+Please respond immediately."""
+
+                sms_sent = send_sms_twilio(phone_number, sms_message)
+                
+                if sms_sent:
+                    logger.info(f"✅ Emergency SMS sent successfully to {phone_number}")
+                    return Response({
+                        "status": "success", 
+                        "message": "Medical alert sent successfully",
+                        "sms_sent": True
+                    }, status=status.HTTP_200_OK)
+                else:
+                    logger.error(f"❌ Failed to send emergency SMS to {phone_number}")
+                    return Response({
+                        "status": "partial_success", 
+                        "message": "Alert received but SMS failed to send",
+                        "sms_sent": False
+                    }, status=status.HTTP_200_OK)
+            else:
+                logger.warning("⚠️ No phone number provided for SMS alert")
+                return Response({
+                    "status": "success", 
+                    "message": "Alert received but no phone number provided",
+                    "sms_sent": False
+                }, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error("❌ Error in AlertMedicalStaffView:", exc_info=e)
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({
+                "error": str(e),
+                "status": "error"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
