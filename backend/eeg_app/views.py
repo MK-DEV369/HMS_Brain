@@ -222,7 +222,8 @@ def send_sms_india(phone_number: str, sms_message: str) -> bool:
         url = "https://www.fast2sms.com/dev/bulkV2"
         headers = {
             "authorization":"QOKz5mce0IVrAv9B3jMgohs8EpWXZRGDfNHYy6duSLFn47bkCPVyzGRxcLQEisBNj6o07kO1d9wUYfnK",
-            "Content-Type": "application/json"
+            'Content-Type': "application/x-www-form-urlencoded",
+            'Cache-Control': "no-cache",
         }
         payload = {
             "route": "q",
@@ -231,7 +232,8 @@ def send_sms_india(phone_number: str, sms_message: str) -> bool:
             "flash": 0,
             "numbers": phone_number,
         }
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.request("POST", url, data=payload, headers=headers)
+        print(response.text)
         return response.status_code == 200
     except Exception as e:
         print(f"❌ Failed to send SMS via Fast2SMS: {e}")
