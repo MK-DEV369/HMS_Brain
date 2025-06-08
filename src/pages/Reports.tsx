@@ -6,13 +6,6 @@ import { ProcessedEEGPoint } from '../utils/dataProcessing';
 import { API_BASE_URL } from '../utils/constants';
 import Plot from 'react-plotly.js';
 
-interface Result {
-  id: number;
-  status: string;
-  confidence: string;
-  timestamp: string;
-}
-
 type ColorMap = {
   [key: string]: string;
 };
