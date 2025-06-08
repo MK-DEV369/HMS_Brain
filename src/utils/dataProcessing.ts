@@ -1,37 +1,15 @@
 import { EEG_SAMPLING_RATE, FREQUENCY_BANDS } from './constants';
 
-// Define interfaces
 export interface RawEEGPoint {
-  timestamp?: number;
-  amplitude?: number;
-  frequency_bands?: {
-    alpha?: number;
-    beta?: number;
-    theta?: number;
-    delta?: number;
-  };
-  alpha?: number;
-  beta?: number;
-  theta?: number;
-  delta?: number;
-  frequency?: number;
+  [key: string]: number; // allows dynamic key access like point["Fp1"]
 }
 
 export interface ProcessedEEGPoint {
   time: number;
-  amplitude: number;
-  alpha?: number;
-  beta?: number;
-  theta?: number;
-  delta?: number;
-  normalizedAmplitude?: number;
-  isArtifact?: boolean;
-  frequency?: number;
+  [key: string]: number; // each channel like Fp1, Fp2, etc. will map to a number
 }
 
-/**
- * Process raw EEG data from the backend
- */
+
 export function processEEGData(rawData: RawEEGPoint[]): ProcessedEEGPoint[] {
   if (!rawData || !Array.isArray(rawData)) {
     console.error('Invalid EEG data received:', rawData);
@@ -39,24 +17,19 @@ export function processEEGData(rawData: RawEEGPoint[]): ProcessedEEGPoint[] {
   }
 
   return rawData.map((point, index) => {
-    const processedPoint: ProcessedEEGPoint = {
-      time: point.timestamp ?? index,
-      amplitude: point.amplitude ?? 0,
-    };
+    const processedPoint: ProcessedEEGPoint = { time: point.timestamp ?? index };
 
-    if (point.frequency_bands) {
-      processedPoint.alpha = point.frequency_bands.alpha ?? 0;
-      processedPoint.beta = point.frequency_bands.beta ?? 0;
-      processedPoint.theta = point.frequency_bands.theta ?? 0;
-      processedPoint.delta = point.frequency_bands.delta ?? 0;
-    } else {
-      processedPoint.alpha = point.alpha ?? 0;
-      processedPoint.beta = point.beta ?? 0;
+    // Copy all EEG channel values dynamically
+    for (const key in point) {
+      if (key !== 'timestamp' && typeof point[key] === 'number') {
+        processedPoint[key] = point[key];
+      }
     }
 
     return processedPoint;
   });
 }
+
 //Apply a digital filter to EEG data
 export function applyBandpassFilter(
   data: ProcessedEEGPoint[],
@@ -67,12 +40,20 @@ export function applyBandpassFilter(
 
   return data.map(point => {
     const filtered = { ...point };
+
     if (point.frequency && (point.frequency < lowCutoff || point.frequency > highCutoff)) {
-      filtered.amplitude = point.amplitude * 0.3;
+      // Reduce amplitude and all channels
+      Object.keys(filtered).forEach(key => {
+        if (key !== 'time' && typeof filtered[key] === 'number') {
+          filtered[key] = (filtered[key] as number) * 0.3;
+        }
+      });
     }
+
     return filtered;
   });
 }
+
 
 //Calculate frequency bands from time-domain EEG data
 export function calculateFrequencyBands(timeData: ProcessedEEGPoint[]): { frequency: string; power: number }[] {
@@ -107,96 +88,96 @@ export function calculateFrequencyBands(timeData: ProcessedEEGPoint[]): { freque
   return frequencyData;
 }
 
-/**
- * Extract features from EEG data for ML model input
- */
+//Extract features from EEG data for ML model input
 export function extractFeatures(eegData: ProcessedEEGPoint[]): Record<string, number> {
   if (!eegData || eegData.length === 0) return {};
 
-  const amplitudes = eegData.map(point => point.amplitude);
-  const mean = amplitudes.reduce((sum, val) => sum + val, 0) / amplitudes.length;
+  const channels = Object.keys(eegData[0]).filter(key => key !== 'time' && typeof eegData[0][key] === 'number');
 
-  const variance = amplitudes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / amplitudes.length;
-  const stdDev = Math.sqrt(variance);
+  const features: Record<string, number> = {};
 
-  const min = Math.min(...amplitudes);
-  const max = Math.max(...amplitudes);
-  const range = max - min;
-  const energy = amplitudes.reduce((sum, val) => sum + val * val, 0);
+  channels.forEach(channel => {
+    const values = eegData.map(p => p[channel] as number);
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const energy = values.reduce((sum, v) => sum + v * v, 0);
 
-  let lineLength = 0;
-  for (let i = 1; i < amplitudes.length; i++) {
-    lineLength += Math.abs(amplitudes[i] - amplitudes[i - 1]);
-  }
+    let lineLength = 0;
+    for (let i = 1; i < values.length; i++) {
+      lineLength += Math.abs(values[i] - values[i - 1]);
+    }
 
-  let bandPowers: Record<string, number> = {};
-  if (eegData[0].alpha !== undefined) {
-    const alphaPower = eegData.reduce((sum, point) => sum + Math.pow(point.alpha ?? 0, 2), 0) / eegData.length;
-    const betaPower = eegData.reduce((sum, point) => sum + Math.pow(point.beta ?? 0, 2), 0) / eegData.length;
-    const thetaPower = eegData.reduce((sum, point) => sum + Math.pow(point.theta ?? 0, 2), 0) / eegData.length;
-    const deltaPower = eegData.reduce((sum, point) => sum + Math.pow(point.delta ?? 0, 2), 0) / eegData.length;
+    features[`${channel}_mean`] = mean;
+    features[`${channel}_stdDev`] = stdDev;
+    features[`${channel}_variance`] = variance;
+    features[`${channel}_min`] = min;
+    features[`${channel}_max`] = max;
+    features[`${channel}_range`] = range;
+    features[`${channel}_energy`] = energy;
+    features[`${channel}_lineLength`] = lineLength;
+  });
 
-    bandPowers = {
-      alphaPower,
-      betaPower,
-      thetaPower,
-      deltaPower,
-      alphaToThetaRatio: thetaPower > 0 ? alphaPower / thetaPower : 0,
-    };
-  }
-
-  return {
-    mean,
-    stdDev,
-    variance,
-    min,
-    max,
-    range,
-    energy,
-    lineLength,
-    ...bandPowers,
-  };
+  return features;
 }
 
-/**
- * Normalize EEG data for consistent visualization
- */
+
+//Normalize EEG data for consistent visualization
 export function normalizeData(data: ProcessedEEGPoint[]): ProcessedEEGPoint[] {
   if (!data || data.length === 0) return [];
 
-  let min = Infinity;
-  let max = -Infinity;
+  const keys = Object.keys(data[0]).filter(k => k !== 'time' && typeof data[0][k] === 'number');
+  const mins: Record<string, number> = {};
+  const maxs: Record<string, number> = {};
 
-  data.forEach(point => {
-    if (point.amplitude < min) min = point.amplitude;
-    if (point.amplitude > max) max = point.amplitude;
+  keys.forEach(key => {
+    mins[key] = Math.min(...data.map(p => p[key] as number));
+    maxs[key] = Math.max(...data.map(p => p[key] as number));
   });
 
-  const range = max - min || 1;
-
-  return data.map(point => ({
-    ...point,
-    normalizedAmplitude: (point.amplitude - min) / range,
-  }));
+  return data.map(p => {
+    const normalizedPoint: ProcessedEEGPoint = { time: p.time };
+    keys.forEach(k => {
+      const range = maxs[k] - mins[k] || 1;
+      normalizedPoint[k] = ((p[k] as number) - mins[k]) / range;
+    });
+    return normalizedPoint;
+  });
 }
 
-/**
- * Detect artifacts and anomalies in EEG data
- */
+
+//Detect artifacts and anomalies in EEG data
 export function detectArtifacts(data: ProcessedEEGPoint[]): ProcessedEEGPoint[] {
   if (!data || data.length === 0) return [];
 
-  const amplitudes = data.map(point => point.amplitude);
-  const mean = amplitudes.reduce((sum, val) => sum + val, 0) / amplitudes.length;
-  const variance = amplitudes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / amplitudes.length;
-  const stdDev = Math.sqrt(variance);
-  const threshold = 3 * stdDev;
+  const keys = Object.keys(data[0]).filter(k => k !== 'time' && typeof data[0][k] === 'number');
 
-  return data.map(point => ({
-    ...point,
-    isArtifact: Math.abs(point.amplitude - mean) > threshold,
-  }));
+  const stats = keys.map(key => {
+    const values = data.map(p => p[key] as number);
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const stdDev = Math.sqrt(values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length);
+    return { key, mean, stdDev };
+  });
+
+  return data.map(p => {
+    const isArtifact = stats.some(({ key, mean, stdDev }) => {
+      const val = p[key] as number;
+      return Math.abs(val - mean) > 3 * stdDev;
+    });
+    
+    // Create a new object that matches the ProcessedEEGPoint interface
+    const processedPoint: ProcessedEEGPoint = {
+      time: p.time,
+      ...(Object.fromEntries(keys.map(k => [k, isArtifact ? 0 : p[k]])))
+    };
+
+    return processedPoint;
+  });
 }
+
 
 /**
  * Format EEG data for CSV export

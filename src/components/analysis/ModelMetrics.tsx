@@ -1,8 +1,87 @@
 import { useState } from 'react';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { FileUp, Download, BarChart2, PieChart as PieChartIcon, Activity } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { FileUp, Download, BarChart2, PieChart as PieChartIcon, Activity, ArrowUpDown } from 'lucide-react';
 
-// Mock data for visualizations
+const modelResultsData = [
+  {
+    model: 'Random Forest',
+    trainAccuracy: 0.875456,
+    trainKL: 0.9056,
+    valAccuracy: 0.844148,
+    valKL: 0.934,
+  },
+  {
+    model: 'XGBoost',
+    trainAccuracy: 0.960709,
+    trainKL: 0.180738,
+    valAccuracy: 0.931414,
+    valKL: 0.257048,
+  },
+  {
+    model: 'LSTM',
+    trainAccuracy: 0.796793,
+    trainKL: 0.591659,
+    valAccuracy: 0.802903,
+    valKL: 0.592339,
+  },
+  {
+    model: 'CNN (EfficientNetB2)',
+    trainAccuracy: null,
+    trainKL: null,
+    valAccuracy: 0.775059980104,
+    valKL: 0.435244176902,
+  },
+  {
+    model: 'ConvLSTM',
+    trainAccuracy: 0.906273,
+    trainKL: 0.364662,
+    valAccuracy: 0.882444,
+    valKL: 0.433653,
+  },
+  {
+    model: 'SVM',
+    trainAccuracy: 0.8687,
+    trainKL: 0.421820,
+    valAccuracy: 0.8433,
+    valKL: 0.489364,
+  }
+];
+
+// Function to get chart data for selected model
+const getModelChartData = (modelName: string) => {
+  const model = modelResultsData.find(m => m.model === modelName);
+  if (!model) return [];
+  
+  const chartData = [];
+  
+  if (model.trainAccuracy !== null) {
+    chartData.push({ metric: 'Train Accuracy', value: model.trainAccuracy });
+  }
+  if (model.valAccuracy !== null) {
+    chartData.push({ metric: 'Val Accuracy', value: model.valAccuracy });
+  }
+  if (model.trainKL !== null) {
+    chartData.push({ metric: 'Train KL Div', value: model.trainKL });
+  }
+  if (model.valKL !== null) {
+    chartData.push({ metric: 'Val KL Div', value: model.valKL });
+  }
+  
+  return chartData;
+};
+
+// Function to get comparison data for all models
+const getComparisonData = () => {
+  return modelResultsData.map(model => ({
+    model: model.model,
+    trainAcc: model.trainAccuracy,
+    valAcc: model.valAccuracy,
+    trainKL: model.trainKL,
+    valKL: model.valKL
+  })).filter(item => item.trainAcc !== null || item.valAcc !== null);
+};
+
+// Feature importance data
 const featureImportanceData = [
   { name: 'Delta Power', value: 85 },
   { name: 'Theta Power', value: 63 },
@@ -14,57 +93,48 @@ const featureImportanceData = [
   { name: 'Line Length', value: 72 }
 ];
 
-const modelPerformanceData = [
-  { name: 'Accuracy', value: 0.89 },
-  { name: 'Precision', value: 0.92 },
-  { name: 'Recall', value: 0.87 },
-  { name: 'F1 Score', value: 0.90 },
-  { name: 'AUC', value: 0.94 }
-];
-
-const confusionMatrixData = [
-  { name: 'True Negatives', value: 145 },
-  { name: 'False Positives', value: 12 },
-  { name: 'False Negatives', value: 18 },
-  { name: 'True Positives', value: 156 }
-];
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-
-// Create clusters of data for the t-SNE visualization
-const generateClusterData = (centerX: number, centerY: number, label: string, count: number) => {
-  const data = [];
-  for (let i = 0; i < count; i++) {
-    data.push({
-      x: centerX + (Math.random() - 0.5) * 10,
-      y: centerY + (Math.random() - 0.5) * 10,
-      z: 10,
-      label
-    });
-  }
-  return data;
-};
-
-const tsneData = [
-  ...generateClusterData(-20, -15, 'seizure', 50),
-  ...generateClusterData(15, 20, 'lpd', 40),
-  ...generateClusterData(20, -15, 'gpd', 35),
-  ...generateClusterData(-15, 15, 'lrda', 25),
-  ...generateClusterData(20, 15, 'grda', 30),
-  ...generateClusterData(20, 20, 'others', 45)
-];
-
-export default function AnalysisPage() {
-  const [activeTab, setActiveTab] = useState('features');
+export default function ModelMetrics() {
+  const [activeTab, setActiveTab] = useState('results');
   const [selectedModel, setSelectedModel] = useState('Random Forest');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setUploadedFile(file);
-      // In a real app, you would process the file here
     }
+  };
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedData = [...modelResultsData].sort((a, b) => {
+    if (!sortConfig) return 0;
+    
+    const aValue = (a as any)[sortConfig.key];
+    const bValue = (b as any)[sortConfig.key];
+    
+    if (aValue === null && bValue === null) return 0;
+    if (aValue === null) return 1;
+    if (bValue === null) return -1;
+    
+    if (aValue < bValue) {
+      return sortConfig.direction === 'asc' ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return sortConfig.direction === 'asc' ? 1 : -1;
+    }
+    return 0;
+  });
+
+  const formatValue = (value: number | null, decimals = 6) => {
+    return value !== null ? value.toFixed(decimals) : 'N/A';
   };
 
   return (
@@ -94,9 +164,11 @@ export default function AnalysisPage() {
             onChange={(e) => setSelectedModel(e.target.value)}
           >
             <option>Random Forest</option>
-            <option>LSTM</option>
-            <option>1D CNN</option>
+            <option>Random Forest (Final)</option>
             <option>XGBoost</option>
+            <option>LSTM</option>
+            <option>CNN (EfficientNetB2)</option>
+            <option>ConvLSTM</option>
           </select>
         </div>
       </div>
@@ -113,24 +185,234 @@ export default function AnalysisPage() {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="flex border-b">
           <button
+            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'results' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('results')}
+          >
+            <Activity size={16} />
+            <span>Model Results</span>
+          </button>
+          <button
+            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'comparison' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('comparison')}
+          >
+            <BarChart2 size={16} />
+            <span>Model Comparison</span>
+          </button>
+          <button
             className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'features' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
             onClick={() => setActiveTab('features')}
           >
-            <BarChart2 size={16} />
-            <span>Feature Analysis</span>
-          </button>
-          <button
-            className={`py-3 px-6 font-medium flex items-center space-x-2 ${activeTab === 'performance' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setActiveTab('performance')}
-          >
             <PieChartIcon size={16} />
-            <span>Model Performance</span>
+            <span>Feature Analysis</span>
           </button>
         </div>
         
         <div className="p-6">
+          {activeTab === 'results' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-medium">Model Performance Comparison</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Model
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('trainAccuracy')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>Train Accuracy</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('trainKL')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>Train KL Div</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('valAccuracy')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>Val Accuracy</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('valKL')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>Val KL Div</span>
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedData.map((result, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {result.model}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            result.trainAccuracy && result.trainAccuracy > 0.9 
+                              ? 'bg-green-100 text-green-800' 
+                              : result.trainAccuracy && result.trainAccuracy > 0.8
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {formatValue(result.trainAccuracy)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatValue(result.trainKL)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            result.valAccuracy && result.valAccuracy > 0.9 
+                              ? 'bg-green-100 text-green-800' 
+                              : result.valAccuracy && result.valAccuracy > 0.8
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {formatValue(result.valAccuracy)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatValue(result.valKL)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">Performance Summary</h4>
+                <p className="text-sm text-blue-800">
+                  XGBoost is the best model due to its superior validation accuracy (93 %) and lower KL Divergence (26 %), 
+                  reflecting its ability to accurately predict outcomes and closely match the true data distribution. 
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'comparison' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium">Interactive Model Comparison</h3>
+                <div className="text-sm text-gray-600">
+                  Selected Model: <span className="font-semibold text-blue-600">{selectedModel}</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Individual Model Performance */}
+                <div className="bg-white border rounded-lg p-4">
+                  <h4 className="text-md font-medium mb-4">{selectedModel} Performance</h4>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={getModelChartData(selectedModel)}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="metric" angle={-45} textAnchor="end" height={80} />
+                        <YAxis />
+                        <Tooltip formatter={(value: number | string) => [String(value).padEnd(6, '0'), 'Value']} />
+                        <Bar dataKey="value" fill="#3B82F6" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 p-3 bg-gray-50 rounded">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {(() => {
+                        const model = modelResultsData.find(m => m.model === selectedModel);
+                        return (
+                          <>
+                            {model?.trainAccuracy && (
+                              <div><span className="text-gray-600">Train Acc:</span> <span className="font-mono">{model.trainAccuracy.toFixed(6)}</span></div>
+                            )}
+                            {model?.valAccuracy && (
+                              <div><span className="text-gray-600">Val Acc:</span> <span className="font-mono">{model.valAccuracy.toFixed(6)}</span></div>
+                            )}
+                            {model?.trainKL && (
+                              <div><span className="text-gray-600">Train KL:</span> <span className="font-mono">{model.trainKL.toFixed(6)}</span></div>
+                            )}
+                            {model?.valKL && (
+                              <div><span className="text-gray-600">Val KL:</span> <span className="font-mono">{model.valKL.toFixed(6)}</span></div>
+                            )}                            
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* All Models Accuracy Comparison */}
+                <div className="bg-white border rounded-lg p-4">
+                  <h4 className="text-md font-medium mb-4">Accuracy Comparison (All Models)</h4>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={getComparisonData()} layout="horizontal">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" domain={[0, 1]} />
+                        <YAxis dataKey="model" type="category" width={120} />
+                        <Tooltip formatter={(value: number | string) => [String(value).padEnd(6, '0'), 'Value']} />
+                        <Legend />
+                        <Bar dataKey="trainAcc" fill="#10B981" name="Train Acc" />
+                        <Bar dataKey="valAcc" fill="#3B82F6" name="Val Acc" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 p-3 bg-blue-50 rounded">
+                    <p className="text-sm text-blue-800">
+                      <strong>Best Performer:</strong> XGBoost is the best model due to its superior validation accuracy (93 %) and lower KL Divergence (26 %), 
+                  reflecting its ability to accurately predict outcomes and closely match the true data distribution. 
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KL Divergence Comparison */}
+              <div className="bg-white border rounded-lg p-4">
+                <h4 className="text-md font-medium mb-4">KL Divergence Comparison</h4>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={getComparisonData()}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="model" angle={-45} textAnchor="end" height={80} />
+                      <YAxis />
+                      <Tooltip formatter={(value) => {
+                        if (typeof value === 'number') {
+                          return [value.toFixed(6), 'KL Divergence'];
+                        } else {
+                          return ['N/A', 'KL Divergence'];
+                        }
+                      }} />
+                      <Legend />
+                      <Line type="monotone" dataKey="trainKL" stroke="#EF4444" name="Train KL Div" strokeWidth={2} />
+                      <Line type="monotone" dataKey="valKL" stroke="#F59E0B" name="Val KL Div" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 p-3 bg-yellow-50 rounded">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Lower KL Divergence indicates better performance.</strong> Random Forest (Final) shows the best KL divergence scores,
+                    indicating superior probability distribution matching.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {activeTab === 'features' && (
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-lg font-medium mb-4">Feature Importance</h3>
                 <div className="h-80">
@@ -189,94 +471,6 @@ export default function AnalysisPage() {
                   The frequency distributions show clear separation between normal brain activity and different seizure types.
                 </p>
               </div>
-            </div>
-          )}
-          
-          {activeTab === 'performance' && (
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-medium mb-4">Model Metrics</h3>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={modelPerformanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis domain={[0, 1]} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="value" fill="#8884d8" name="Score" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  The {selectedModel} model shows strong performance across all metrics, with particularly high precision (0.92) and AUC (0.94).
-                </p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-medium mb-4">Confusion Matrix</h3>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={confusionMatrixData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {confusionMatrixData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <div className="bg-green-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-green-700">91.3%</div>
-                    <div className="text-sm text-green-600">Accuracy</div>
-                  </div>
-                  <div className="bg-blue-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-blue-700">92.9%</div>
-                    <div className="text-sm text-blue-600">Precision</div>
-                  </div>
-                  <div className="bg-yellow-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-yellow-700">89.7%</div>
-                    <div className="text-sm text-yellow-600">Recall</div>
-                  </div>
-                  <div className="bg-purple-50 p-3 rounded-lg text-center">
-                    <div className="text-lg font-bold text-purple-700">91.2%</div>
-                    <div className="text-sm text-purple-600">F1 Score</div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4">
-                  <h5 className="text-sm font-medium text-gray-700 mb-1">Hyperparameters</h5>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Learning Rate</div>
-                      <div className="font-medium">0.001</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Batch Size</div>
-                      <div className="font-medium">32</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Epochs</div>
-                      <div className="font-medium">100</div>
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-200">
-                      <div className="text-xs text-gray-500">Optimizer</div>
-                      <div className="font-medium">Adam</div>
-                    </div>
-                  </div>
-                </div>
             </div>
           )}
         </div>

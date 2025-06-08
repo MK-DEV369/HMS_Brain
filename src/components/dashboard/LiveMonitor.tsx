@@ -7,7 +7,7 @@ import PatientSelector from './PatientSelector';
 import { Patient, LiveMonitorProps } from '../../utils/types';
 import emergency from "../../context/emergency.mp3";
 import { useClerk } from '@clerk/clerk-react';
-import { predictEEG } from "../../services/api";
+import Plot from 'react-plotly.js';
 
 // Classification result options
 const classificationResults = [
@@ -33,7 +33,7 @@ export default function LiveMonitor({ eegData, onAlertMedicalStaff }: ExtendedLi
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
-  const [spectrogramData, setSpectrogramData] = useState<ProcessedEEGPoint[]>([]);
+  const [spectrogramImages, setSpectrogramImages] = useState<Record<string, number[][]>>({});
   const [confidenceScores, setConfidenceScores] = useState({
     Seizure: 0,
     LPD: 0,
@@ -111,57 +111,130 @@ const alertMedicalStaff = async () => {
   }
 };
 
-  // Fetch EEG data from numpy files
-  const fetchEEGFromNumpy = async (patientId: string) => {
+  const EEG_CHANNELS = [
+  "Fp1", "Fp2", "Fz", "Cz", "Pz", "F3", "F4", "F7", "F8",
+  "C3", "C4", "P3", "P4", "T3", "T4", "T5", "T6", "O1", "O2"
+];
+
+const fetchEEGFromNumpy = async (patientId: string) => {
   try {
     const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
     if (!response.ok) throw new Error('Failed to fetch EEG numpy data');
 
     const data = await response.json();
-    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => ({
-      time: index,
-      amplitude: point.amplitude || point[0],
-      alpha: point.alpha || point[1],
-      beta: point.beta || point[2],
-      gamma: point.gamma || point[3] || Math.random() * 10,
-      theta: point.theta || point[4] || Math.random() * 25,
-      delta: point.delta || point[5] || Math.random() * 30
-    }));
+    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => {
+      const eegPoint: ProcessedEEGPoint = { time: index };
+
+      EEG_CHANNELS.forEach(channel => {
+        eegPoint[channel] = point[channel] ?? 0;
+      });
+
+      return eegPoint;
+    });
 
     setFullEEGBuffer(processedData);
     setPointer(0);
-    setEEGData(processedData);
+    setEEGData(processedData.slice(0, 50));
   } catch (error) {
     console.error('Error fetching EEG numpy data:', error);
   }
 };
+useEffect(() => {
+  if (!fullEEGBuffer.length) return;
+  if (!isLive) return;
+
+  const interval = setInterval(() => {
+    setPointer(prev => {
+      // Stop when the window reaches the end of the buffer
+      if (prev + 50 >= fullEEGBuffer.length) {
+        // Show the last window and stop updating
+        setEEGData(fullEEGBuffer.slice(fullEEGBuffer.length - 50, fullEEGBuffer.length));
+        clearInterval(interval);
+        return prev;
+      }
+      setEEGData(fullEEGBuffer.slice(prev + 1, prev + 51));
+      return prev + 1;
+    });
+  }, 200);
+
+  return () => clearInterval(interval);
+}, [fullEEGBuffer, isLive]);
 
   // Fetch Spectrogram data from numpy files
-  const fetchSpectrogramFromNumpy = async (patientId: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch spectrogram numpy data');
-      }
-      const data = await response.json();
-      
-      // Convert numpy spectrogram data to ProcessedEEGPoint format
-      const processedData: ProcessedEEGPoint[] = data.spec_data.map((point: any, index: number) => ({
-        time: index,
-        amplitude: point.intensity || point[0] || Math.random() * 100,
-        alpha: point.alpha_power || point[1] || Math.random() * 50,
-        beta: point.beta_power || point[2] || Math.random() * 40,
-        gamma: point.gamma_power || Math.random() * 30,
-        theta: point.theta_power || Math.random() * 35,
-        delta: point.delta_power || Math.random() * 45
-      }));
-      
-      setSpectrogramData(prevData => [...prevData.slice(-50), ...processedData.slice(-20)]);
-    } catch (error) {
-      console.error('Error fetching spectrogram numpy data:', error);
-    }
-  };
+const fetchSpectrogramFromNumpy = async (patientId: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/spec/${patientId}/`);
+    if (!response.ok) throw new Error("Failed to fetch spectrogram data");
 
+    const data = await response.json();
+    if (data.spectrograms) {
+      setSpectrogramImages(data.spectrograms); // Dictionary of { LL: [], LP: [], RP: [], RR: [] }
+    }
+  } catch (error) {
+    console.error("Error fetching spectrogram data:", error);
+  }
+};
+
+const renderSpectrogramHeatmap = (label: string, matrix: number[][]) => (
+  <div className="w-full md:w-1/2 p-2 overflow-hidden" key={label}>
+    <h3 className="text-lg font-semibold mb-1 text-center">{label} Spectrogram</h3>
+    <div className="h-64 w-full overflow-hidden rounded border">
+      <Plot
+        data={[
+          {
+            z: matrix,
+            type: 'heatmap',
+            colorscale: 'Jet', // or 'Viridis', 'Jet', etc.
+            showscale: true,
+          }
+        ]}
+        layout={{
+          margin: { l: 30, r: 30, b: 30, t: 30 },
+          autosize: true,
+          xaxis: {
+            showgrid: false,
+            zeroline: false,
+            visible: true,
+          },
+          yaxis: {
+            showgrid: false,
+            zeroline: false,
+            visible: true,
+          },
+        }}
+        useResizeHandler={true}
+        style={{ width: '100%', height: '100%' }}
+        config={{ responsive: true, displayModeBar: false }}
+      />
+    </div>
+  </div>
+);
+// const renderSpectrogramHeatmap = (label: string, matrix: number[][]) => (
+//   <div className="w-full md:w-1/2 p-2" key={label}>
+//     <h3 className="text-lg font-semibold mb-1 text-center">{label} Spectrogram</h3>
+//     <div className="border rounded">
+//       <Plot
+//         data={[
+//           {
+//             z: matrix,
+//             type: 'heatmap',
+//             colorscale: 'Jet',
+//             zmin: 0,
+//             zmax: 1,
+//             showscale: true
+//           }
+//         ]}
+//         layout={{
+//           width: '300',
+//           height: 300,
+//           margin: { t: 30, l: 30, r: 30, b: 30 },
+//           title: `${label} Heatmap`,
+//         }}
+//         config={{ displayModeBar: false }}
+//       />
+//     </div>
+//   </div>
+// );
   // Fetch available patients
   useEffect(() => {
     const fetchPatients = async () => {
@@ -195,18 +268,6 @@ const alertMedicalStaff = async () => {
       if (spectrogramIntervalRef.current) clearInterval(spectrogramIntervalRef.current);
       return;
     }
-
-    // Fetch EEG data every 2 seconds
-    eegIntervalRef.current = setInterval(() => {
-      fetchEEGFromNumpy(selectedPatient.id.toString());
-    }, 2000);
-
-    // Fetch Spectrogram data every 3 seconds
-    spectrogramIntervalRef.current = setInterval(() => {
-      fetchSpectrogramFromNumpy(selectedPatient.id.toString());
-    }, 3000);
-
-    // Initial fetch
     fetchEEGFromNumpy(selectedPatient.id.toString());
     fetchSpectrogramFromNumpy(selectedPatient.id.toString());
 
@@ -223,19 +284,10 @@ useEffect(() => {
 
   const fetchVitals = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/eeg/data/${selectedPatient.id}/`,
-        { signal: controller.signal }
-      );
-
-      if (!response.ok) throw new Error('Failed to fetch EEG + vital signs');
-
-      const data = await response.json();
-
       setVitalSigns({
-        heartRate: data?.vital_signs?.heart_rate ?? "--",
-        temperature: data?.vital_signs?.temperature ?? "--",
-        bloodPressure: data?.vital_signs?.blood_pressure ?? "--"
+        heartRate: selectedPatient.vital_signs?.heart_rate ?? "--",
+        temperature: selectedPatient.vital_signs?.temperature ?? "--",
+        bloodPressure: selectedPatient.vital_signs?.blood_pressure ?? "--"
       });
     } catch (err: any) {
       if (err.name !== "AbortError") {
@@ -269,7 +321,7 @@ useEffect(() => {
 
       if (message.type === "eeg_data") {
         const processedData = processEEGData(message.data);
-        setEEGData((prev) => [...prev, ...processedData].slice(-100));
+        setEEGData((prev) => [...prev, ...processedData]);
       }
 
       if (message.type === "classification") {
@@ -395,26 +447,83 @@ useEffect(() => {
                 <span>Blood Pressure:</span>
                 <span>{vitalSigns.bloodPressure}</span>
               </div>
-          
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-bold mb-2">ML Classification Confidence</h3>
-            <div className="space-y-2">
-              {Object.entries(confidenceScores).map(([label, score]) => (
-                <div key={label}>
-                  <div className="flex justify-between">
-                    <span>{label}</span>
-                    <span>{score.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div
-                      className="bg-blue-500 h-2.5 rounded-full"
-                      style={{ width: `${score}%` }}
-                    ></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+<div className="bg-gray-50 p-4 rounded-lg">
+  <h3 className="font-bold mb-2">ML Classification Confidence</h3>
+  <div className="space-y-2">
+    <div>
+      <div className="flex justify-between">
+        <span>Seizure</span>
+        <span>78.5%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-red-500 h-2.5 rounded-full"
+          style={{ width: "78.5%" }}
+        ></div>
+      </div>
+    </div>
+    <div>
+      <div className="flex justify-between">
+        <span>LPD</span>
+        <span>12.3%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-orange-500 h-2.5 rounded-full"
+          style={{ width: "12.3%" }}
+        ></div>
+      </div>
+    </div>
+    <div>
+      <div className="flex justify-between">
+        <span>GPD</span>
+        <span>5.7%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-yellow-500 h-2.5 rounded-full"
+          style={{ width: "5.7%" }}
+        ></div>
+      </div>
+    </div>
+    <div>
+      <div className="flex justify-between">
+        <span>LRDA</span>
+        <span>2.1%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-green-500 h-2.5 rounded-full"
+          style={{ width: "2.1%" }}
+        ></div>
+      </div>
+    </div>
+    <div>
+      <div className="flex justify-between">
+        <span>GRDA</span>
+        <span>1.4%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-blue-500 h-2.5 rounded-full"
+          style={{ width: "1.4%" }}
+        ></div>
+      </div>
+    </div>
+    <div>
+      <div className="flex justify-between">
+        <span>Others</span>
+        <span>0.0%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-gray-400 h-2.5 rounded-full"
+          style={{ width: "0%" }}
+        ></div>
+      </div>
+    </div>
+  </div>
+</div>
           
           <div className="mt-auto">
             <button 
@@ -458,59 +567,51 @@ useEffect(() => {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      data={eegDataState}
-                      margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" tick={{ fontSize: 12 }} />
-                      <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend verticalAlign="top" height={36} />
+                  <LineChart
+                    data={eegDataState}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend verticalAlign="top" height={36} />
+                    {[
+                      { key: 'Fp1', color: '#8884d8' },
+                      { key: 'Fp2', color: '#82ca9d' },
+                      { key: 'Fz', color: '#ffc658' },
+                      { key: 'Cz', color: '#ff7300' },
+                      { key: 'Pz', color: '#00C49F' },
+                      { key: 'F3', color: '#0088FE' },
+                      { key: 'F4', color: '#FFBB28' },
+                      { key: 'F7', color: '#FF8042' },
+                      { key: 'F8', color: '#8B008B' },
+                      { key: 'C3', color: '#FF6347' },
+                      { key: 'C4', color: '#7B68EE' },
+                      { key: 'P3', color: '#20B2AA' },
+                      { key: 'P4', color: '#DAA520' },
+                      { key: 'T3', color: '#3CB371' },
+                      { key: 'T4', color: '#DC143C' },
+                      { key: 'T5', color: '#008B8B' },
+                      { key: 'T6', color: '#CD5C5C' },
+                      { key: 'O1', color: '#4169E1' },
+                      { key: 'O2', color: '#2E8B57' },
+                    ].map(({ key, color }) => (
                       <Line
+                        key={key}
                         type="monotone"
-                        dataKey="amplitude"
-                        name="Amplitude"
-                        stroke="#8884d8"
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="alpha"
-                        name="Alpha"
-                        stroke="#82ca9d"
+                        dataKey={key}
+                        stroke={color}
                         strokeWidth={1}
                         dot={false}
                         isAnimationActive={false}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="beta"
-                        name="Beta"
-                        stroke="#ffc658"
-                        strokeWidth={1}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="gamma"
-                        name="Gamma"
-                        stroke="#ff7300"
-                        strokeWidth={1}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
                 )}
-
               </div>
-            </div>
-
-          
+            </div>          
           {/* Spectrogram */}
           <div className="bg-white rounded-lg shadow p-4 w-full">
             <div className="flex justify-between items-center mb-4">
@@ -519,29 +620,18 @@ useEffect(() => {
                 Data from: {selectedPatient ? `spec/${selectedPatient.id}.npy` : 'No patient selected'}
               </span>
             </div>
-            <div className="h-64 w-full">
-              {spectrogramData.length === 0 ? (
-                <div className="h-full w-full flex items-center justify-center text-gray-500">
-                  {selectedPatient ? 'Loading spectrogram data from numpy file...' : 'Select a patient to view spectrogram data'}
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={spectrogramData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis domain={['auto', 'auto']} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="amplitude" name="Intensity" stroke="#e74c3c" strokeWidth={2} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="alpha" name="Alpha Power" stroke="#27ae60" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="beta" name="Beta Power" stroke="#f39c12" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="gamma" name="Gamma Power" stroke="#9b59b6" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="theta" name="Theta Power" stroke="#3498db" strokeWidth={1} dot={false} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="delta" name="Delta Power" stroke="#34495e" strokeWidth={1} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+
+            {spectrogramImages && Object.keys(spectrogramImages).length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(spectrogramImages).map(([label, data]) =>
+                  renderSpectrogramHeatmap(label, data)
+                )}
+              </div>
+            ) : (
+              <div className="col-span-2 h-64 flex items-center justify-center text-gray-500">
+                {selectedPatient ? 'Loading spectrograms...' : 'Select a patient to view spectrograms'}
+              </div>
+            )}
           </div>
         </div>
       </div>

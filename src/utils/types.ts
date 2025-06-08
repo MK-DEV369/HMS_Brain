@@ -1,11 +1,18 @@
 import { ProcessedEEGPoint } from "./dataProcessing";
 
+export interface VitalSigns {
+    heart_rate: number;
+    temperature: number;
+    blood_pressure: string;
+}
+
 export interface Patient {
     id: string;
     name: string;
     room: string;
     age?: number;
     status?: 'stable' | 'critical' | 'warning';
+    vital_signs?: VitalSigns;
 }
 
 export interface LiveMonitorProps {

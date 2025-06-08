@@ -1,32 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Download, Printer, Mail, FilePlus, ChevronLeft, Calendar } from 'lucide-react';
-
-type Patient = {
-  id: number;
-  name: string;
-  age: number;
-  room: string;
-  patientId: string;
-};
-
-// Mock data for EEG visualization
-const generateEEGData = () => {
-  const data = [];
-  for (let i = 0; i < 100; i++) {
-    data.push({
-      time: i,
-      amplitude: Math.sin(i * 0.1) * 10 + Math.random() * 5,
-      alpha: Math.sin(i * 0.1) * 5 + Math.random() * 2,
-      beta: Math.cos(i * 0.1) * 3 + Math.random() * 1.5,
-    });
-  }
-  return data;
-};
-
-const eegData = generateEEGData();
+import { Patient } from '../../utils/types';
+import { API_BASE_URL } from '../../utils/constants';
+import { ProcessedEEGPoint } from '../../utils/dataProcessing';
 
 export default function ReportGenerator() {
+  const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substr(0, 10));
   const [reportType, setReportType] = useState('comprehensive');
@@ -35,20 +15,65 @@ export default function ReportGenerator() {
   const [includeMetrics, setIncludeMetrics] = useState(true);
   const [doctorNotes, setDoctorNotes] = useState('');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+  const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
+  const [fullEEGBuffer, setFullEEGBuffer] = useState<ProcessedEEGPoint[]>([]);
+  const [pointer, setPointer] = useState(0);
 
-  // Mock patient data
-  const patients = [
-    { id: 1, name: 'John Doe', age: 45, room: 'ICU-4', patientId: 'PT-001' },
-    { id: 2, name: 'Jane Smith', age: 32, room: 'ICU-2', patientId: 'PT-002' },
-    { id: 3, name: 'Robert Johnson', age: 67, room: 'ICU-7', patientId: 'PT-003' }
-  ];
+// Fetch available patients
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/eeg/patients/`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch patients');
+        }
+        const data = await response.json();
+        console.log('Fetched patients:', data);
+        setPatients(data);
+      } catch (err) {
+        console.error('Error fetching patients:', err);
+      }
+    };
+    
+    fetchPatients();
+    
+    // Update clock every second
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString());
+    }, 1000);
+    
+    return () => clearInterval(clockInterval);
+  }, []);
 
-  // Mock results data
-  const classificationResults = [
-    { id: 1, status: "Normal", confidence: "87%", timestamp: "2025-04-12 10:15:23" },
-    { id: 2, status: "Focal Seizure", confidence: "92%", timestamp: "2025-04-12 14:22:45" },
-    { id: 3, status: "Normal", confidence: "89%", timestamp: "2025-04-13 08:30:12" }
-  ];
+    const EEG_CHANNELS = [
+  "Fp1", "Fp2", "Fz", "Cz", "Pz", "F3", "F4", "F7", "F8",
+  "C3", "C4", "P3", "P4", "T3", "T4", "T5", "T6", "O1", "O2"
+];
+
+const fetchEEGFromNumpy = async (patientId: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
+    if (!response.ok) throw new Error('Failed to fetch EEG numpy data');
+
+    const data = await response.json();
+    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => {
+      const eegPoint: ProcessedEEGPoint = { time: index };
+
+      EEG_CHANNELS.forEach(channel => {
+        eegPoint[channel] = point[channel] ?? 0;
+      });
+
+      return eegPoint;
+    });
+
+    setFullEEGBuffer(processedData);
+    setPointer(0);
+    setEEGData(processedData.slice(0, 50));
+  } catch (error) {
+    console.error('Error fetching EEG numpy data:', error);
+  }
+};
 
   const handleGenerateReport = () => {
     setIsPreviewMode(true);
@@ -355,7 +380,7 @@ export default function ReportGenerator() {
                       <div className="text-gray-500">Patient Name:</div>
                       <div className="font-medium">{selectedPatient.name}</div>
                       <div className="text-gray-500">Patient ID:</div>
-                      <div className="font-medium">{selectedPatient.patientId}</div>
+                      <div className="font-medium">{selectedPatient.id}</div>
                       <div className="text-gray-500">Age:</div>
                       <div className="font-medium">{selectedPatient.age}</div>
                       <div className="text-gray-500">Room:</div>
@@ -370,13 +395,11 @@ export default function ReportGenerator() {
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <div className="grid grid-cols-2 gap-y-2">
                         <div className="text-gray-500">Heart Rate:</div>
-                        <div className="font-medium">72 BPM</div>
+                        <div className="font-medium">{selectedPatient.vital_signs?.heart_rate} BPM</div>
                         <div className="text-gray-500">Blood Pressure:</div>
-                        <div className="font-medium">120/80 mmHg</div>
+                        <div className="font-medium">{selectedPatient.vital_signs?.blood_pressure} mmHg</div>
                         <div className="text-gray-500">Temperature:</div>
-                        <div className="font-medium">98.6°F</div>
-                        <div className="text-gray-500">Respiration:</div>
-                        <div className="font-medium">16 breaths/min</div>
+                        <div className="font-medium">{selectedPatient.vital_signs?.temperature} °F</div>
                       </div>
                     </div>
                   </div>

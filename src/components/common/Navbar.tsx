@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Brain, Activity, FileText, ArrowUpNarrowWide, Menu, X } from 'lucide-react';
+import { Brain, Activity, FileText, ArrowUpNarrowWide, Menu, X, LogIn, LogOut } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, SignOutButton } from '@clerk/clerk-react';
 
 const Navbar = () => {
@@ -38,16 +38,20 @@ const Navbar = () => {
               active={location.pathname === '/reports'}
               to="/reports"
             />
+
             <SignedOut>
-            <SignInButton mode="modal">
-              <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
-                Sign In
-              </span>
-            </SignInButton>
-          </SignedOut>
+              <SignInButton mode="modal">
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">
+                  <LogIn className="h-5 w-5 mr-1" />
+                  Sign In
+                </span>
+              </SignInButton>
+            </SignedOut>
+
             <SignedIn>
               <SignOutButton>
-                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">
+                  <LogOut className="h-5 w-5 mr-1" />
                   Sign Out
                 </span>
               </SignOutButton>
@@ -92,16 +96,20 @@ const Navbar = () => {
               active={location.pathname === '/reports'}
               to="/reports"
             />
+
             <SignedOut>
               <SignInButton mode="modal">
-                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">
+                  <LogIn className="h-5 w-5 mr-1" />
                   Sign In
                 </span>
               </SignInButton>
             </SignedOut>
+
             <SignedIn>
               <SignOutButton>
-                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50">
+                <span className="flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-gray-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">
+                  <LogOut className="h-5 w-5 mr-1" />
                   Sign Out
                 </span>
               </SignOutButton>

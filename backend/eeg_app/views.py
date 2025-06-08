@@ -15,9 +15,14 @@ import logging
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from .patient_generator import generate_patient_data
+import base64
+import numpy as np
+import tempfile
+from intelligence.models.XGBoost.xgboost import xgb_model_manager
 #from eeg_app.utils.feature_extraction import extractFeatures
 
 model = tf.keras.models.load_model("backend\eeg_app\model.keras")
+SPECTROGRAM_NAMES = ['LL', 'LP', 'RP', 'RR']
 EEG_DATA_PATH = os.path.join("E:/4th SEM Data/HMS_Main_EL/HMS-Brian/project/backend/intelligence/preprocessed/eeg/")
 SPEC_DATA_PATH = os.path.join("E:/4th SEM Data/HMS_Main_EL/HMS-Brian/project/backend/intelligence/preprocessed/spec/")
 
@@ -39,11 +44,10 @@ class EEGDataView(APIView):
                 {channels[i]: float(sample[i]) for i in range(len(channels))}
                 for sample in eeg_array
             ]
-            return Response({"eeg_data": eeg_data[-100:]}, status=status.HTTP_200_OK)  # Send last 100 samples
+            return Response({"eeg_data": eeg_data}, status=status.HTTP_200_OK) 
+            # return Response({"eeg_data": eeg_data[-100:]}, status=status.HTTP_200_OK)# Send last 100 samples
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 class SPECDataView(APIView):
     def get(self, request, patient_id):
@@ -52,102 +56,136 @@ class SPECDataView(APIView):
             if not os.path.exists(file_path):
                 return Response({"error": f"Spectrogram .npy file for patient {patient_id} not found"}, status=404)
 
-            spec_array = np.load(file_path)  # shape: (N, 6): [intensity, alpha, beta, gamma, theta, delta]
-            spec_data = [
-                {
-                    "intensity": float(row[0]) if len(row) > 0 else 0.0,
-                    "alpha_power": float(row[1]) if len(row) > 1 else 0.0,
-                    "beta_power": float(row[2]) if len(row) > 2 else 0.0,
-                    "gamma_power": float(row[3]) if len(row) > 3 else 0.0,
-                    "theta_power": float(row[4]) if len(row) > 4 else 0.0,
-                    "delta_power": float(row[5]) if len(row) > 5 else 0.0
-                }
-                for row in spec_array
-            ]
-            return Response({"spec_data": spec_data}, status=status.HTTP_200_OK)
+            spec_array = np.load(file_path)  # shape: (128, 256, 4)
+            if spec_array.shape != (128, 256, 4):
+                return Response({"error": f"Invalid spectrogram shape: {spec_array.shape}"}, status=400)
+
+            # Convert each of the 4 channels to list of lists for heatmap display
+            spectrograms = {
+                'LL': spec_array[:, :, 0].tolist(),
+                'LP': spec_array[:, :, 1].tolist(),
+                'RP': spec_array[:, :, 2].tolist(),
+                'RR': spec_array[:, :, 3].tolist()
+            }
+
+            return Response({"spectrograms": spectrograms}, status=status.HTTP_200_OK)
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
+# now update the frontend to display the predict eeg from xgboost, sub page next to Model Comparison as Predict Custom Values
 class PredictEEG(APIView):
     def post(self, request):
+        """
+        Endpoint for XGBoost EEG prediction
+        
+        Expected input formats:
+        1. File upload (.npy file): 19 channels x time_points
+        2. JSON array: 19 channels x time_points
+        3. Manual feature input: Pre-computed features
+        4. Single EEG values: 19 single values (one per channel)
+        """
+        
         try:
-            filename = request.data.get("file")
-            if not filename:
-                return Response({"error": "No file provided"}, status=400)
-
-            full_path = os.path.join(EEG_DATA_PATH, filename)
-            if not os.path.exists(full_path):
-                return Response({"error": "File not found"}, status=404)
-
-            df = pd.read_parquet(full_path)
-            eeg_signal = df["Fp1"].values[:1000]  # adjust channel/sample size as needed
-
-            # Create spectrogram image
-            fig, ax = plt.subplots()
-            ax.specgram(eeg_signal, Fs=100)
-            plt.axis('off')
-            buf = BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
-            plt.close(fig)
-
-            buf.seek(0)
-            img = Image.open(buf).convert("RGB")
-            img = img.resize((224, 224))
-            img_array = np.array(img) / 255.0
-            img_array = img_array.reshape((1, 224, 224, 3))
-
-            prediction = model.predict(img_array)[0]
-            print(prediction)
-            predicted_class = int(np.argmax(prediction))
-
-            return Response({
-                "prediction": predicted_class,
-                "confidence_scores": {
-                    "seizure": float(prediction[0][0]) * 100,
-                    "lpd": float(prediction[0][1]) * 100,
-                    "gpd": float(prediction[0][2]) * 100,
-                    "lrda": float(prediction[0][3]) * 100,
-                    "grda": float(prediction[0][4]) * 100,
-                    "others": float(prediction[0][5]) * 100,
+            # Method 1: File upload
+            if 'eeg_file' in request.FILES:
+                uploaded_file = request.FILES['eeg_file']
+                
+                # Save temporarily
+                with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as tmp_file:
+                    for chunk in uploaded_file.chunks():
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    result = xgb_model_manager.predict_from_file(tmp_file_path)
+                    return Response({
+                        "model": "XGBoost",
+                        "input_method": "file_upload",
+                        "result": result
+                    })
+                finally:
+                    os.unlink(tmp_file_path)
+            
+            # Method 2: JSON data (19 channels x time_points)
+            elif 'eeg_data' in request.data:
+                eeg_data = np.array(request.data['eeg_data'])
+                
+                if eeg_data.shape[0] != 19:
+                    return Response({
+                        "error": "EEG data must have 19 channels"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                result = xgb_model_manager.predict(eeg_data)
+                return Response({
+                    "model": "XGBoost",
+                    "input_method": "json_data",
+                    "result": result
+                })
+            
+            # Method 3: Single EEG values (19 values, one per channel)
+            elif 'eeg_values' in request.data:
+                eeg_values = np.array(request.data['eeg_values'])
+                
+                if len(eeg_values) != 19:
+                    return Response({
+                        "error": "Must provide exactly 19 EEG values (one per channel)"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Convert single values to time series by repeating values
+                # This creates a 19 x 100 array where each channel has constant value
+                time_points = 100  # You can adjust this
+                eeg_data = np.tile(eeg_values.reshape(19, 1), (1, time_points))
+                
+                result = xgb_model_manager.predict(eeg_data)
+                return Response({
+                    "model": "XGBoost",
+                    "input_method": "single_values",
+                    "result": result
+                })
+            
+            # Method 4: Manual feature input (for testing)
+            elif 'features' in request.data:
+                features = np.array(request.data['features'])
+                
+                if len(features) != len(xgb_model_manager.feature_names):
+                    return Response({
+                        "error": f"Expected {len(xgb_model_manager.feature_names)} features"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Direct prediction with features
+                import xgboost as xgb
+                dtest = xgb.DMatrix(features.reshape(1, -1))
+                probabilities = xgb_model_manager.model.predict(dtest)[0]
+                
+                predicted_class_idx = np.argmax(probabilities)
+                predicted_class = xgb_model_manager.label_encoder.inverse_transform([predicted_class_idx])[0]
+                
+                class_probabilities = {}
+                for i, class_name in enumerate(xgb_model_manager.config['classes']):
+                    class_probabilities[class_name] = float(probabilities[i])
+                
+                result = {
+                    "predicted_class": predicted_class,
+                    "confidence": float(probabilities[predicted_class_idx]),
+                    "probabilities": class_probabilities
                 }
-            })
-
+                
+                return Response({
+                    "model": "XGBoost",
+                    "input_method": "manual_features",
+                    "result": result
+                })
+            
+            else:
+                return Response({
+                    "error": "No valid input provided. Use 'eeg_file', 'eeg_data', 'eeg_values', or 'features'"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
-
-
-# class PredictEEG(APIView):
-#     def post(self, request):
-#         try:
-#             filename = request.data.get("file")  # e.g., '001.parquet'
-#             if not filename:
-#                 return Response({"error": "No file provided"}, status=400)
-
-#             file_path = os.path.join(settings.BASE_DIR, 'train_eegs', filename)
-#             df = pd.read_parquet(file_path)
-#             # You can return specific channels or reshape based on your model
-#             eeg_data = df.to_numpy()  # Convert to numpy array
-#             # Generate a spectrogram from the EEG data
-#             fig, ax = plt.subplots()
-#             ax.specgram(eeg_data[:, 0], Fs=100)  # Example: Generate a spectrogram
-#             buf = BytesIO()
-#             plt.savefig(buf, format='png')
-#             buf.seek(0)
-#             img = Image.open(buf).convert('RGB')
-#             img = img.resize((224, 224))  # Resize to match model input
-#             img_array = np.array(img) / 255.0  # Normalize pixel values
-#             img_array = img_array.reshape(1, 224, 224, 3)  # Add batch dimension
-
-#             # Make prediction
-#             prediction = model.predict(img_array)
-#             predicted_class = int(np.argmax(prediction))  # Get the predicted class
-
-#             return Response({'prediction': predicted_class}, status=status.HTTP_200_OK)
-
-#         except Exception as e:
-#             print("Error during prediction:", str(e))  # Debugging
-#             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class PatientsView(APIView):
     def get(self, request):
@@ -177,6 +215,29 @@ class PatientDetailsView(APIView):
 
 logger = logging.getLogger(__name__)
 
+import requests
+
+def send_sms_india(phone_number: str, sms_message: str) -> bool:
+    try:
+        url = "https://www.fast2sms.com/dev/bulkV2"
+        headers = {
+            "authorization":"QOKz5mce0IVrAv9B3jMgohs8EpWXZRGDfNHYy6duSLFn47bkCPVyzGRxcLQEisBNj6o07kO1d9wUYfnK",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "route": "q",
+            "message": sms_message,
+            "schedule_time": None,
+            "flash": 0,
+            "numbers": phone_number,
+        }
+        response = requests.post(url, json=payload, headers=headers)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Failed to send SMS via Fast2SMS: {e}")
+        return False
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class AlertMedicalStaffView(APIView):
     def post(self, request):
@@ -196,8 +257,14 @@ class AlertMedicalStaffView(APIView):
             # Log or save to DB (optional):
             logger.info(f"🚨 Emergency alert for Patient {patient_name} (Room {room}) by Doctor {doctor_id}")
 
-            # Placeholder for SMS integration
-            print(f"📲 Sending SMS to {phone_number}... Message: {message}")
+            # Send SMS using Fast2SMS
+            if phone_number:
+                sms_message = f"Alert: {alert_type}\nPatient: {patient_name}\nRoom: {room}\nSeverity: {severity}\nMessage: {message}"
+                sms_sent = send_sms_india(phone_number, sms_message)
+                if sms_sent:
+                    logger.info(f"✅ SMS sent successfully to {phone_number}")
+                else:
+                    logger.error(f"❌ Failed to send SMS to {phone_number}")
 
             return Response({"status": "success", "message": "Medical alert received"}, status=status.HTTP_200_OK)
 

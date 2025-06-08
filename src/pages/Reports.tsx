@@ -1,30 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Download, Printer, Mail, ChevronLeft, Calendar } from 'lucide-react';
-
-// Mock data for EEG visualization
-const generateEEGData = () => {
-  const data = [];
-  for (let i = 0; i < 100; i++) {
-    data.push({
-      time: i,
-      amplitude: Math.sin(i * 0.1) * 10 + Math.random() * 5,
-      alpha: Math.sin(i * 0.1) * 5 + Math.random() * 2,
-      beta: Math.cos(i * 0.1) * 3 + Math.random() * 1.5,
-    });
-  }
-  return data;
-};
-
-const eegData = generateEEGData();
-
-interface Patient {
-  id: number;
-  name: string;
-  age: number;
-  room: string;
-  patientId: string;
-}
+import { Patient } from '../utils/types';
+import { ProcessedEEGPoint } from '../utils/dataProcessing';
+import { API_BASE_URL } from '../utils/constants';
+import Plot from 'react-plotly.js';
 
 interface Result {
   id: number;
@@ -47,6 +27,12 @@ const classificationColors: ColorMap = {
 };
 
 const Reports: React.FC = () => {
+  const [patients, setPatients] = useState([]);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+  const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
+  const [fullEEGBuffer, setFullEEGBuffer] = useState<ProcessedEEGPoint[]>([]);
+  const [pointer, setPointer] = useState(0);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substr(0, 10));
   const [reportType, setReportType] = useState('comprehensive');
@@ -56,21 +42,25 @@ const Reports: React.FC = () => {
   const [doctorNotes, setDoctorNotes] = useState('');
   const [isChartVisible, setIsChartVisible] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const [spectrogramImages, setSpectrogramImages] = useState<Record<string, number[][]>>({});
+  const [vitalSigns, setVitalSigns] = useState<{
+  heartRate: number | string;
+  temperature: number | string;
+  bloodPressure: string;
+  }>({
+    heartRate: "--",
+    temperature: "--",
+    bloodPressure: "--",
+  });
 
-  const patients: Patient[] = [
-    { id: 1, name: 'John Doe', age: 45, room: 'ICU-4', patientId: 'PT-001' },
-    { id: 2, name: 'Jane Smith', age: 32, room: 'ICU-2', patientId: 'PT-002' },
-    { id: 3, name: 'Robert Johnson', age: 67, room: 'ICU-7', patientId: 'PT-003' },
-  ];
-
-  const classificationResults: Result[] = [
-    { id: 1, status: 'Seizure', confidence: '87%', timestamp: '2025-04-12 10:15:23' },
-    { id: 2, status: 'LPD', confidence: '92%', timestamp: '2025-04-12 14:22:45'},
-    { id: 3, status: 'GPD', confidence: '95%', timestamp: '2025-04-13 08:30:12' },
-    { id: 4, status: 'LRDA', confidence: '88%', timestamp: '2025-04-12 10:15:23'},
-    { id: 5, status: 'GRDA', confidence: '90%', timestamp: '2025-04-12 14:22:45'},
-    { id: 6, status: 'Others', confidence: '94%', timestamp: '2025-04-13 08:30:12'},
-  ];
+  // const classificationResults: Result[] = [
+  //   { id: 1, status: 'Seizure', confidence: '87%', timestamp: '2025-04-12 10:15:23' },
+  //   { id: 2, status: 'LPD', confidence: '92%', timestamp: '2025-04-12 14:22:45'},
+  //   { id: 3, status: 'GPD', confidence: '95%', timestamp: '2025-04-13 08:30:12' },
+  //   { id: 4, status: 'LRDA', confidence: '88%', timestamp: '2025-04-12 10:15:23'},
+  //   { id: 5, status: 'GRDA', confidence: '90%', timestamp: '2025-04-12 14:22:45'},
+  //   { id: 6, status: 'Others', confidence: '94%', timestamp: '2025-04-13 08:30:12'},
+  // ];
 
   // Trigger chart animation when patient is selected
   useEffect(() => {
@@ -80,6 +70,138 @@ const Reports: React.FC = () => {
       setIsChartVisible(false);
     }
   }, [selectedPatient]);
+
+  // Fetch available patients
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/eeg/patients/`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch patients');
+        }
+        const data = await response.json();
+        console.log('Fetched patients:', data);
+        setPatients(data);
+      } catch (err) {
+        console.error('Error fetching patients:', err);
+      }
+    };
+    
+    fetchPatients();
+    
+    // Update clock every second
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString());
+    }, 1000);
+    
+    return () => clearInterval(clockInterval);
+  }, []);
+
+    const EEG_CHANNELS = [
+  "Fp1", "Fp2", "Fz", "Cz", "Pz", "F3", "F4", "F7", "F8",
+  "C3", "C4", "P3", "P4", "T3", "T4", "T5", "T6", "O1", "O2"
+];
+
+const fetchEEGFromNumpy = async (patientId: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
+    if (!response.ok) throw new Error('Failed to fetch EEG numpy data');
+
+    const data = await response.json();
+    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => {
+      const eegPoint: ProcessedEEGPoint = { time: index };
+
+      EEG_CHANNELS.forEach(channel => {
+        eegPoint[channel] = point[channel] ?? 0;
+      });
+
+      return eegPoint;
+    });
+
+    setFullEEGBuffer(processedData);
+    setPointer(0);
+    setEEGData(processedData);
+  } catch (error) {
+    console.error('Error fetching EEG numpy data:', error);
+  }
+};
+
+    // Fetch Spectrogram data from numpy files
+const fetchSpectrogramFromNumpy = async (patientId: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/eeg/spec/${patientId}/`);
+    if (!response.ok) throw new Error("Failed to fetch spectrogram data");
+
+    const data = await response.json();
+    if (data.spectrograms) {
+      setSpectrogramImages(data.spectrograms); // Dictionary of { LL: [], LP: [], RP: [], RR: [] }
+    }
+  } catch (error) {
+    console.error("Error fetching spectrogram data:", error);
+  }
+};
+
+  const renderSpectrogramHeatmap = (label: string, matrix: number[][]) => (
+  <div className="w-full md:w-1/2 p-2" key={label}>
+    <h3 className="text-lg font-semibold mb-1 text-center">{label} Spectrogram</h3>
+    <div className="border rounded">
+      <Plot
+        data={[
+          {
+            z: matrix,
+            type: 'heatmap',
+            colorscale: 'Jet',
+            zmin: 0,
+            zmax: 1,
+            showscale: true
+          }
+        ]}
+        layout={{
+          width: '300',
+          height: 300,
+          margin: { t: 30, l: 30, r: 30, b: 30 },
+          title: `${label} Heatmap`,
+        }}
+        config={{ displayModeBar: false }}
+      />
+    </div>
+  </div>
+);
+
+  // Real-time data fetching from numpy files
+  useEffect(() => {
+    if (!selectedPatient) {
+      return;
+    }
+    fetchEEGFromNumpy(selectedPatient.id.toString());
+    fetchSpectrogramFromNumpy(selectedPatient.id.toString());
+
+    return;
+  }, [selectedPatient]);
+
+useEffect(() => {
+  if (!selectedPatient) return;
+
+  const controller = new AbortController();
+
+  const fetchVitals = async () => {
+    try {
+      setVitalSigns({
+        heartRate: selectedPatient.vital_signs?.heart_rate ?? "--",
+        temperature: selectedPatient.vital_signs?.temperature ?? "--",
+        bloodPressure: selectedPatient.vital_signs?.blood_pressure ?? "--"
+      });
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("❌ Failed to load vital signs:", err);
+        setVitalSigns({ heartRate: "--", temperature: "--", bloodPressure: "--" });
+      }
+    }
+  };
+
+  fetchVitals();
+  return () => controller.abort();
+}, [selectedPatient]);
 
   // Function to handle PDF export
   const handleExportPDF = () => {
@@ -267,7 +389,7 @@ const Reports: React.FC = () => {
     }
     
     const subject = encodeURIComponent(`EEG Report for ${selectedPatient.name} - ${selectedDate}`);
-    const body = encodeURIComponent(`Please find attached the EEG Monitoring Report for ${selectedPatient.name} (${selectedPatient.patientId}) dated ${selectedDate}.`);
+    const body = encodeURIComponent(`Please find attached the EEG Monitoring Report for ${selectedPatient.name} (${selectedPatient.id}) dated ${selectedDate}.`);
     
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
@@ -318,25 +440,27 @@ const Reports: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-800 mb-6">Report Configuration</h2>
           <form className="space-y-6">
             <div>
-              <label htmlFor="patient" className="block text-sm font-medium text-gray-700 mb-2">
-                Select Patient
-              </label>
-              <select
-                id="patient"
-                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-                value={selectedPatient?.id || ''}
-                onChange={(e) =>
-                  setSelectedPatient(patients.find((p) => p.id === parseInt(e.target.value)) as Patient)
-                }
-              >
-                <option value="">Select a patient</option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.name} - {patient.patientId}
-                  </option>
-                ))}
-              </select>
-            </div>
+  <label htmlFor="patient" className="block text-sm font-medium text-gray-700 mb-2">
+    Select Patient
+  </label>
+  <select
+    id="patient"
+    className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
+    value={selectedPatient?.id || ''}
+    onChange={(e) => {
+      const selectedId = e.target.value;
+      const patient = patients.find((p) => p.id.toString() === selectedId);
+      setSelectedPatient(patient || null);
+    }}
+  >
+    <option value="">Select a patient</option>
+    {patients.map((patient) => (
+      <option key={patient.id} value={patient.id}>
+        {patient.name} - {patient.id}
+      </option>
+    ))}
+  </select>
+</div>
 
             <div>
               <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-2">
@@ -372,7 +496,7 @@ const Reports: React.FC = () => {
               </select>
             </div>
 
-            <div className="space-y-3">
+            {/* <div className="space-y-3">
               <div className="flex items-center">
                 <input
                   id="include-vitals"
@@ -409,7 +533,7 @@ const Reports: React.FC = () => {
                   Classification Metrics
                 </label>
               </div>
-            </div>
+            </div> */}
 
             <div>
               <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
@@ -433,49 +557,7 @@ const Reports: React.FC = () => {
             Historical EEG Classification Results
           </h2>
           {selectedPatient ? (
-            <div className="space-y-6 animate-slide-up">
-              <div className="overflow-x-auto bg-white rounded-xl shadow-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date & Time
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Classification
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Confidence
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {classificationResults.map((result) => (
-                      <tr
-                        key={result.timestamp}
-                        className="hover:bg-gray-50 transition-all duration-200"
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {result.timestamp}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              classificationColors[result.status] ||
-                              'bg-gray-200 text-gray-700'
-                            }`}
-                          >
-                            {result.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {result.confidence}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="space-y-6 animate-slide-up">              
 
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-lg font-medium text-gray-800 mb-4">EEG Sample Preview</h3>
@@ -485,37 +567,51 @@ const Reports: React.FC = () => {
                   }`}
                 >
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={eegData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="time" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
+                  <LineChart
+                    data={eegDataState}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend verticalAlign="top" height={36} />
+                    {[
+                      { key: 'Fp1', color: '#8884d8' },
+                      { key: 'Fp2', color: '#82ca9d' },
+                      { key: 'Fz', color: '#ffc658' },
+                      { key: 'Cz', color: '#ff7300' },
+                      { key: 'Pz', color: '#00C49F' },
+                      { key: 'F3', color: '#0088FE' },
+                      { key: 'F4', color: '#FFBB28' },
+                      { key: 'F7', color: '#FF8042' },
+                      { key: 'F8', color: '#8B008B' },
+                      { key: 'C3', color: '#FF6347' },
+                      { key: 'C4', color: '#7B68EE' },
+                      { key: 'P3', color: '#20B2AA' },
+                      { key: 'P4', color: '#DAA520' },
+                      { key: 'T3', color: '#3CB371' },
+                      { key: 'T4', color: '#DC143C' },
+                      { key: 'T5', color: '#008B8B' },
+                      { key: 'T6', color: '#CD5C5C' },
+                      { key: 'O1', color: '#4169E1' },
+                      { key: 'O2', color: '#2E8B57' },
+                    ].map(({ key, color }) => (
                       <Line
+                        key={key}
                         type="monotone"
-                        dataKey="amplitude"
-                        stroke="#8884d8"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="alpha"
-                        stroke="#82ca9d"
+                        dataKey={key}
+                        stroke={color}
                         strokeWidth={1}
                         dot={false}
+                        isAnimationActive={false}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="beta"
-                        stroke="#ffc658"
-                        strokeWidth={1}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
                 </div>
               </div>
+              
             </div>
           ) : (
             <div className="flex items-center justify-center h-64 bg-gray-50 rounded-xl shadow-lg animate-fade-in">
@@ -554,165 +650,146 @@ const Reports: React.FC = () => {
 
             <div className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-800 mb-4">Patient Information</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                    <div className="grid grid-cols-2 gap-y-2">
-                      <div className="text-gray-500">Patient Name:</div>
-                      <div className="font-medium">{selectedPatient.name}</div>
-                      <div className="text-gray-500">Patient ID:</div>
-                      <div className="font-medium">{selectedPatient.patientId}</div>
-                      <div className="text-gray-500">Age:</div>
-                      <div className="font-medium">{selectedPatient.age}</div>
-                      <div className="text-gray-500">Room:</div>
-                      <div className="font-medium">{selectedPatient.room}</div>
-                    </div>
-                  </div>
-                </div>
+  <div>
+    <h3 className="text-lg font-medium text-gray-800 mb-4">Patient Information</h3>
+    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
+      <div className="grid grid-cols-2 gap-y-2">
+        <div className="text-gray-500">Patient Name:</div>
+        <div className="font-medium">{selectedPatient.name}</div>
+        <div className="text-gray-500">Patient ID:</div>
+        <div className="font-medium">{selectedPatient.id}</div>
+        <div className="text-gray-500">Age:</div>
+        <div className="font-medium">{selectedPatient.age}</div>
+        <div className="text-gray-500">Room:</div>
+        <div className="font-medium">{selectedPatient.room}</div>
+      </div>
+    </div>
+  </div>
+  {includeVitals && (
+    <div>
+      <h3 className="text-lg font-medium text-gray-800 mb-4">Vital Signs</h3>
+      <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
+        <div className="grid grid-cols-2 gap-y-2">
+          <div className="text-gray-500">Heart Rate:</div>
+          <div className="font-medium">{selectedPatient.vital_signs?.heart_rate} BPM</div>
+          <div className="text-gray-500">Blood Pressure:</div>
+          <div className="font-medium">{selectedPatient.vital_signs?.blood_pressure} mmHg</div>
+          <div className="text-gray-500">Temperature:</div>
+          <div className="font-medium">{selectedPatient.vital_signs?.temperature} °F</div>
+        </div>
+      </div>
+    </div>
+  )}
+  <div>
+    <h3 className="text-lg font-medium text-gray-800 mb-4">
+      Brain Activity Classification
+    </h3>
+    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <p className="text-gray-500">Latest Classification:</p>
+          <div className="mt-1">
+            <span className="px-3 py-1 inline-flex text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">
+              GRDA
+            </span>
+          </div>
+        </div>
+        <div>
+          <p className="text-gray-500">Model Accuracy:</p>
+          <p className="text-xl font-bold">93%</p>
+        </div>
+        <div>
+          <p className="text-gray-500">Detection Time:</p>
+          <p className="font-medium">2025-06-09 15:02:45</p>
+        </div>
+      </div>
+      <div>
+        <p className="font-medium">Classification Details:</p>
+        <p className="text-gray-600 mt-1">
+          The patient's EEG shows characteristics consistent with focal seizure
+          activity. The seizure originates from the temporal lobe and exhibits
+          typical rhythmic theta activity followed by spike-wave discharges.
+        </p>
+      </div>
+    </div>
+  </div>
+  {includeGraph && (
+    <div>
+      <h3 className="text-lg font-medium text-gray-800 mb-4">EEG Visualization</h3>
+      <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
+        <div
+          className={`h-64 transition-all duration-500 ${
+            isChartVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+          }`}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={eegDataState}
+              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+              <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+              <Tooltip />
+              <Legend verticalAlign="top" height={36} />
+              {[
+                { key: 'Fp1', color: '#8884d8' },
+                { key: 'Fp2', color: '#82ca9d' },
+                { key: 'Fz', color: '#ffc658' },
+                { key: 'Cz', color: '#ff7300' },
+                { key: 'Pz', color: '#00C49F' },
+                { key: 'F3', color: '#0088FE' },
+                { key: 'F4', color: '#FFBB28' },
+                { key: 'F7', color: '#FF8042' },
+                { key: 'F8', color: '#8B008B' },
+                { key: 'C3', color: '#FF6347' },
+                { key: 'C4', color: '#7B68EE' },
+                { key: 'P3', color: '#20B2AA' },
+                { key: 'P4', color: '#DAA520' },
+                { key: 'T3', color: '#3CB371' },
+                { key: 'T4', color: '#DC143C' },
+                { key: 'T5', color: '#008B8B' },
+                { key: 'T6', color: '#CD5C5C' },
+                { key: 'O1', color: '#4169E1' },
+                { key: 'O2', color: '#2E8B57' },
+              ].map(({ key, color }) => (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={color}
+                  strokeWidth={1}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
 
-                {includeVitals && (
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-4">Vital Signs</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                      <div className="grid grid-cols-2 gap-y-2">
-                        <div className="text-gray-500">Heart Rate:</div>
-                        <div className="font-medium">72 BPM</div>
-                        <div className="text-gray-500">Blood Pressure:</div>
-                        <div className="font-medium">120/80 mmHg</div>
-                        <div className="text-gray-500">Temperature:</div>
-                        <div className="font-medium">98.6°F</div>
-                        <div className="text-gray-500">Respiration:</div>
-                        <div className="font-medium">16 breaths/min</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <h3 className="text-lg font-medium text-gray-800 mb-4">
-                    Brain Activity Classification
-                  </h3>
-                  <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <p className="text-gray-500">Latest Classification:</p>
-                        <div className="mt-1">
-                          <span className="px-3 py-1 inline-flex text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            GRDA
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Model Confidence:</p>
-                        <p className="text-xl font-bold">94%</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Detection Time:</p>
-                        <p className="font-medium">2025-04-12 14:22:45</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="font-medium">Classification Details:</p>
-                      <p className="text-gray-600 mt-1">
-                        The patient's EEG shows characteristics consistent with focal seizure
-                        activity. The seizure originates from the temporal lobe and exhibits
-                        typical rhythmic theta activity followed by spike-wave discharges.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {includeGraph && (
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-4">EEG Visualization</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                      <div
-                        className={`h-64 transition-all duration-500 ${
-                          isChartVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-                        }`}
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={eegData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis
-                              dataKey="time"
-                              label={{ value: 'Time (s)', position: 'insideBottom', offset: -5 }}
-                            />
-                            <YAxis
-                              label={{
-                                value: 'Amplitude (µV)',
-                                angle: -90,
-                                position: 'insideLeft',
-                              }}
-                            />
-                            <Tooltip />
-                            <Legend />
-                            <Line
-                              type="monotone"
-                              dataKey="amplitude"
-                              stroke="#8884d8"
-                              strokeWidth={2}
-                              dot={false}
-                              name="EEG Signal"
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="alpha"
-                              stroke="#82ca9d"
-                              strokeWidth={1}
-                              dot={false}
-                              name="Alpha Band"
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="beta"
-                              stroke="#ffc658"
-                              strokeWidth={1}
-                              dot={false}
-                              name="Beta Band"
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <p className="text-sm text-gray-500 mt-2">
-                        The highlighted section (60-80s) shows the onset of focal seizure activity
-                        with characteristic changes in amplitude and frequency.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {includeMetrics && (
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-4">
-                      Classification Metrics
-                    </h3>
-                    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                      <div className="grid grid-cols-2 gap-y-2">
-                        <div className="text-gray-500">Sensitivity:</div>
-                        <div className="font-medium">95%</div>
-                        <div className="text-gray-500">Specificity:</div>
-                        <div className="font-medium">98%</div>
-                        <div className="text-gray-500">Positive Predictive Value (PPV):</div>
-                        <div className="font-medium">92%</div>
-                        <div className="text-gray-500">Negative Predictive Value (NPV):</div>
-                        <div className="font-medium">96%</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {includeMetrics && (
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-800 mb-4">Model Performance</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
-                      <p className="font-medium">Accuracy: 94%</p>
-                      <p className="font-medium">F1 Score: 0.93</p>
-                      <p className="font-medium">Area Under the ROC Curve (AUC): 0.97</p>
-                    </div>
-                  </div>
-                )}
-              </div>
+{/* Spectrogram section moved outside the grid and spans full width */}
+{includeGraph && (
+  <div className="mt-6">
+    <h3 className="text-lg font-medium text-gray-800 mb-4">Spectrogram Visualization</h3>
+    <div className="bg-gray-50 p-4 rounded-lg transition-all duration-300 hover:shadow-md">
+      <div
+        className={`min-h-64 transition-all duration-500 ${
+          isChartVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        }`}
+      >
+        <div className="flex flex-ro gap-4 overflow-x-auto">
+          {Object.entries(spectrogramImages).map(([label, data]) =>
+            renderSpectrogramHeatmap(label, data)
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
               <div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-4">Doctor's Notes</h2>
                 <div className="bg-gray-50 p-4 rounded-lg min-h-32 border border-gray-200">

@@ -5,7 +5,6 @@ interface ConfusionMatrixProps {
   data?: {
     accuracy: { train: number; test: number };
     klDivergence: { train: number; test: number };
-    trainTestValidation: { train: number; test: number };
   };
   title?: string;
   className?: string;
@@ -15,7 +14,6 @@ const ConfusionMatrix: React.FC<ConfusionMatrixProps> = ({
   data = {
     accuracy: { train: 0.91, test: 0.89 },
     klDivergence: { train: 0.95, test: 0.92 },
-    trainTestValidation: { train: 0.90, test: 0.87 },
   },
   title = "Model Performance Comparison",
   className = "",
@@ -30,11 +28,6 @@ const ConfusionMatrix: React.FC<ConfusionMatrixProps> = ({
       name: 'KL Divergence',
       'Train Data': data.klDivergence.train * 100,
       'Test Data': data.klDivergence.test * 100,
-    },
-    {
-      name: 'Train Test Validation',
-      'Train Data': data.trainTestValidation.train * 100,
-      'Test Data': data.trainTestValidation.test * 100,
     },
   ];
 
@@ -118,12 +111,6 @@ const ConfusionMatrix: React.FC<ConfusionMatrixProps> = ({
             {(data.klDivergence.test * 100).toFixed(1)}%
           </div>
           <div className="text-sm text-gray-600">Test KL Divergence</div>
-        </div>
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-purple-600">
-            {(data.trainTestValidation.test * 100).toFixed(1)}%
-          </div>
-          <div className="text-sm text-gray-600">Test Validation</div>
         </div>
       </div>
     </div>
