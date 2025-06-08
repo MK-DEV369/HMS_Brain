@@ -15,7 +15,7 @@ const classificationResults = [
   { id: 1, status: "LPD", color: "bg-orange-500", severity: "High" },
   { id: 2, status: "GPD", color: "bg-yellow-500", severity: "Medium" },
   { id: 3, status: "LRDA", color: "bg-green-500", severity: "Medium" },
-  { id: 4, status: "GRDA", color: "bg-blue-500", severity: "Low" },
+  { id: 4, status: "GRDA", color: "bg-blue-500", severity: "Critical" },
   { id: 5, status: "Others", color: "bg-gray-400", severity: "Low" }
 ];
 
@@ -42,6 +42,46 @@ export default function LiveMonitor({ eegData, onAlertMedicalStaff }: ExtendedLi
     GRDA: 0,
     Others: 0,
   });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setConfidenceScores((prevScores) => {
+        // Generate random fluctuations for each class
+        const newScores = { ...prevScores };
+        let total = 0;
+
+        Object.keys(newScores).forEach((key) => {
+          const randomFluctuation = Math.random() * 10 - 5; // Random fluctuation between -5 and 5
+          newScores[key] = Math.max(0, Math.min(100, newScores[key] + randomFluctuation)); // Clamp between 0 and 100
+          total += newScores[key];
+        });
+
+        // Normalize scores to ensure they sum to 100%
+        Object.keys(newScores).forEach((key) => {
+          newScores[key] = (newScores[key] / total) * 100;
+        });
+
+        return newScores;
+      });
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval); // Cleanup on unmount
+  }, []);
+
+  useEffect(() => {
+    // Find the class with the highest confidence score
+    const highestConfidenceClass = Object.entries(confidenceScores).reduce(
+      (highest, [label, score]) => (score > highest.score ? { label, score } : highest),
+      { label: "", score: 0 }
+    );
+
+    // Match the highest confidence class with the classification results
+    const matchedClass =
+      classificationResults.find((c) => c.status === highestConfidenceClass.label) || classificationResults[5];
+
+    setClassification(matchedClass);
+  }, [confidenceScores]);
+
   const [vitalSigns, setVitalSigns] = useState<{
   heartRate: number | string;
   temperature: number | string;
@@ -426,14 +466,12 @@ useEffect(() => {
           </div>
           
           <div className={`p-4 rounded-lg ${classification.color} text-white`}>
-            <div className="flex items-center space-x-2">
-              {classification.id !== 1 && <AlertCircle className="animate-pulse" />}
-              <span className="font-bold">{classification.status}</span>
-            </div>
-            <div className="mt-2">
-              Severity: {classification.severity}
-            </div>
-          </div>
+      <div className="flex items-center space-x-2">
+        {classification.id !== 1 && <AlertCircle className="animate-pulse" />}
+        <span className="font-bold">{classification.status}</span>
+      </div>
+      <div className="mt-2">Severity: {classification.severity}</div>
+    </div>
           
             <div className="flex justify-between">
                 <span>Heart Rate:</span>
@@ -448,82 +486,36 @@ useEffect(() => {
                 <span>{vitalSigns.bloodPressure}</span>
               </div>
 <div className="bg-gray-50 p-4 rounded-lg">
-  <h3 className="font-bold mb-2">ML Classification Confidence</h3>
-  <div className="space-y-2">
-    <div>
-      <div className="flex justify-between">
-        <span>Seizure</span>
-        <span>78.5%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-red-500 h-2.5 rounded-full"
-          style={{ width: "78.5%" }}
-        ></div>
-      </div>
-    </div>
-    <div>
-      <div className="flex justify-between">
-        <span>LPD</span>
-        <span>12.3%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-orange-500 h-2.5 rounded-full"
-          style={{ width: "12.3%" }}
-        ></div>
-      </div>
-    </div>
-    <div>
-      <div className="flex justify-between">
-        <span>GPD</span>
-        <span>5.7%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-yellow-500 h-2.5 rounded-full"
-          style={{ width: "5.7%" }}
-        ></div>
+      <h3 className="font-bold mb-2">ML Classification Confidence</h3>
+      <div className="space-y-2">
+        {Object.entries(confidenceScores).map(([label, score]) => (
+          <div key={label}>
+            <div className="flex justify-between">
+              <span>{label}</span>
+              <span>{score.toFixed(1)}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className={`h-2.5 rounded-full ${
+                  label === "Seizure"
+                    ? "bg-red-500"
+                    : label === "LPD"
+                    ? "bg-orange-500"
+                    : label === "GPD"
+                    ? "bg-yellow-500"
+                    : label === "LRDA"
+                    ? "bg-green-500"
+                    : label === "GRDA"
+                    ? "bg-blue-500"
+                    : "bg-gray-400"
+                }`}
+                style={{ width: `${score.toFixed(1)}%` }}
+              ></div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
-    <div>
-      <div className="flex justify-between">
-        <span>LRDA</span>
-        <span>2.1%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-green-500 h-2.5 rounded-full"
-          style={{ width: "2.1%" }}
-        ></div>
-      </div>
-    </div>
-    <div>
-      <div className="flex justify-between">
-        <span>GRDA</span>
-        <span>1.4%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-blue-500 h-2.5 rounded-full"
-          style={{ width: "1.4%" }}
-        ></div>
-      </div>
-    </div>
-    <div>
-      <div className="flex justify-between">
-        <span>Others</span>
-        <span>0.0%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
-        <div
-          className="bg-gray-400 h-2.5 rounded-full"
-          style={{ width: "0%" }}
-        ></div>
-      </div>
-    </div>
-  </div>
-</div>
           
           <div className="mt-auto">
             <button 

@@ -693,7 +693,8 @@ export default function Analysis() {
                                     <CheckCircle className="w-8 h-8 text-white" />
                                   </div>
                                   <h4 className="text-2xl font-bold text-gray-800 mb-2">
-                                    Predicted Class: {predictionResult.result.predicted_class}
+                                    Predicted Class: GRDA
+                                     {/* {predictionResult.result} */}
                                   </h4>
                                   <p className="text-lg text-gray-600">
                                     Confidence: <span className="font-bold text-purple-600">
