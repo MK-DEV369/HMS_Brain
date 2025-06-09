@@ -291,17 +291,13 @@ class AlertMedicalStaffView(APIView):
 
             # Send SMS using Twilio
             if phone_number:
-                sms_message = f"""🚨 MEDICAL EMERGENCY ALERT 🚨
+                sms_message = f"""MEDICAL EMERGENCY ALERT 🚨
 
 Patient: {patient_name}
 Room: {room}
 Alert: {alert_type}
 Severity: {severity}
-Time: {timestamp}
-
-Message: {message}
-
-Please respond immediately."""
+Time: {timestamp}"""
 
                 sms_sent = send_sms_twilio(phone_number, sms_message)
                 

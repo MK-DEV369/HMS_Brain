@@ -31,3 +31,5 @@ Todo.txt
 .bolt/config.json
 .bolt/prompt
 test_eegs
+*env
+*.env

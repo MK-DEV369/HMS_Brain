@@ -131,7 +131,7 @@ const alertMedicalStaff = async () => {
         patient_name: selectedPatient.name,
         room: selectedPatient.room,
         alert_type: classification.status,
-        message: `Emergency alert: ${classification.status} detected for patient ${selectedPatient.name}`,
+        message: `Emergency alert: ${classification.status} detected`,
         severity: classification.severity,
         timestamp: new Date().toISOString(),
         doctor_id: user.id,
