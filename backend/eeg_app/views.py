@@ -105,23 +105,7 @@ class PredictEEG(APIView):
                     })
                 finally:
                     os.unlink(tmp_file_path)
-            
-            # Method 2: JSON data (19 channels x time_points)
-            elif 'eeg_data' in request.data:
-                eeg_data = np.array(request.data['eeg_data'])
-                
-                if eeg_data.shape[0] != 19:
-                    return Response({
-                        "error": "EEG data must have 19 channels"
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                result = xgb_model_manager.predict(eeg_data)
-                return Response({
-                    "model": "XGBoost",
-                    "input_method": "json_data",
-                    "result": result
-                })
-            
+                        
             # Method 3: Single EEG values (19 values, one per channel)
             elif 'eeg_values' in request.data:
                 eeg_values = np.array(request.data['eeg_values'])

@@ -112,44 +112,51 @@ export default function Analysis() {
     };
   
     const submitFile = async () => {
-      if (!eegFile) return;
-      setLoading(true);
-      const formData = new FormData();
-      formData.append('eeg_file', eegFile);
-  
-      try {
-        
-        const res = await fetch(`${API_BASE_URL}/eeg/predict/`, {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        setPredictionResult(data);
-      } catch (err) {
-        console.error(err);
-        setPredictionResult({ error: 'Prediction failed' });
-      }
-      setLoading(false);
-    };
-  
-    const submitValues = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`${API_BASE_URL}/eeg/predict/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ eeg_values: eegValues }),
-        });
-        const data = await res.json();
-        setPredictionResult(data);
-      } catch (err) {
-        console.error(err);
-        setPredictionResult({ error: 'Prediction failed' });
-      }
-      setLoading(false);
-    };
+  if (!eegFile) return;
+  setLoading(true);
+  const formData = new FormData();
+  formData.append('eeg_file', eegFile);
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/eeg/predict/`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    console.log(data);
+    if (!data.result || !data.result.probabilities) {
+      throw new Error('Invalid API response: Missing result or probabilities');
+    }
+    setPredictionResult(data);
+  } catch (err) {
+    console.error(err);
+    setPredictionResult({ error: 'Prediction failed: Invalid response from server' });
+  }
+  setLoading(false);
+};
+
+const submitValues = async () => {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE_URL}/eeg/predict/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ eeg_values: eegValues }),
+    });
+    const data = await res.json();
+    console.log(data);
+    if (!data.result || !data.result.probabilities) {
+      throw new Error('Invalid API response: Missing result or probabilities');
+    }
+    setPredictionResult(data);
+  } catch (err) {
+    console.error(err);
+    setPredictionResult({ error: 'Prediction failed: Invalid response from server' });
+  }
+  setLoading(false);
+};
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -671,70 +678,72 @@ export default function Analysis() {
             
                       {/* Results Section */}
                       {predictionResult && (
-                        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-                          <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6">
-                            <div className="flex items-center">
-                              <Activity className="w-8 h-8 text-white mr-3" />
-                              <h3 className="text-2xl font-bold text-white">Analysis Results</h3>
-                            </div>
-                          </div>
-                          
-                          <div className="p-8">
-                            {predictionResult.error ? (
-                              <div className="flex items-center p-4 bg-red-50 border border-red-200 rounded-xl">
-                                <AlertCircle className="w-6 h-6 text-red-600 mr-3" />
-                                <p className="text-red-800 font-medium">{predictionResult.error}</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-6">
-                                {/* Main Result */}
-                                <div className="text-center p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200">
-                                  <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-full mb-4">
-                                    <CheckCircle className="w-8 h-8 text-white" />
-                                  </div>
-                                  <h4 className="text-2xl font-bold text-gray-800 mb-2">
-                                    Predicted Class: GRDA
-                                     {/* {predictionResult.result} */}
-                                  </h4>
-                                  <p className="text-lg text-gray-600">
-                                    Confidence: <span className="font-bold text-purple-600">
-                                      {(predictionResult.result.confidence * 100).toFixed(2)}%
-                                    </span>
-                                  </p>
-                                </div>
-            
-                                {/* Probability Breakdown */}
-                                <div className="bg-gray-50 rounded-xl p-6">
-                                  <h4 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                                    <Activity className="w-5 h-5 mr-2" />
-                                    Probability Breakdown
-                                  </h4>
-                                  <div className="space-y-3">
-                                    {Object.entries(predictionResult.result.probabilities).map(([cls, prob]) => (
-                                      <div key={cls} className="flex items-center justify-between">
-                                        <span className="font-medium text-gray-700">{cls}</span>
-                                        <div className="flex items-center space-x-3">
-                                          <div className="w-32 bg-gray-200 rounded-full h-3">
-                                            <div
-                                              className={`h-3 rounded-full transition-all duration-500 ${
-                                                cls === 'Normal' ? 'bg-green-500' : 'bg-red-500'
-                                              }`}
-                                              style={{ width: `${(prob as number) * 100}%` }}
-                                            ></div>
-                                          </div>
-                                          <span className="font-bold text-gray-800 w-12">
-                                            {((prob as number) * 100).toFixed(1)}%
-                                          </span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+  <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+    <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6">
+      <div className="flex items-center">
+        <Activity className="w-8 h-8 text-white mr-3" />
+        <h3 className="text-2xl font-bold text-white">Analysis Results</h3>
+      </div>
+    </div>
+    <div className="p-8">
+      {predictionResult.error ? (
+        <div className="flex items-center p-4 bg-red-50 border border-red-200 rounded-xl">
+          <AlertCircle className="w-6 h-6 text-red-600 mr-3" />
+          <p className="text-red-800 font-medium">{predictionResult.error}</p>
+        </div>
+      ) : !predictionResult.result || !predictionResult.result.probabilities ? (
+        <div className="flex items-center p-4 bg-red-50 border border-red-200 rounded-xl">
+          <AlertCircle className="w-6 h-6 text-red-600 mr-3" />
+          <p className="text-red-800 font-medium">Error: Invalid prediction data</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Main Result */}
+          <div className="text-center p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-full mb-4">
+              <CheckCircle className="w-8 h-8 text-white" />
+            </div>
+            <h4 className="text-2xl font-bold text-gray-800 mb-2">
+              Predicted Class: {predictionResult.result.class}
+            </h4>
+            <p className="text-lg text-gray-600">
+              Confidence: <span className="font-bold text-purple-600">
+                {(predictionResult.result.confidence * 100).toFixed(2)}%
+              </span>
+            </p>
+          </div>
+          {/* Probability Breakdown */}
+          <div className="bg-gray-50 rounded-xl p-6">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <Activity className="w-5 h-5 mr-2" />
+              Probability Breakdown
+            </h4>
+            <div className="space-y-3">
+              {Object.entries(predictionResult.result.probabilities).map(([cls, prob]) => (
+                <div key={cls} className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">{cls}</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-32 bg-gray-200 rounded-full h-3">
+                      <div
+                        className={`h-3 rounded-full transition-all duration-500 ${
+                          cls === 'Normal' ? 'bg-green-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${(prob as number) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="font-bold text-gray-800 w-12">
+                      {((prob as number) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
                     </div>
                   </div>
           )}
