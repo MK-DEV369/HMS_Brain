@@ -17,8 +17,6 @@ export default function ReportGenerator() {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [eegDataState, setEEGData] = useState<ProcessedEEGPoint[]>([]);
-  const [fullEEGBuffer, setFullEEGBuffer] = useState<ProcessedEEGPoint[]>([]);
-  const [pointer, setPointer] = useState(0);
 
 // Fetch available patients
   useEffect(() => {
@@ -45,35 +43,6 @@ export default function ReportGenerator() {
     
     return () => clearInterval(clockInterval);
   }, []);
-
-    const EEG_CHANNELS = [
-  "Fp1", "Fp2", "Fz", "Cz", "Pz", "F3", "F4", "F7", "F8",
-  "C3", "C4", "P3", "P4", "T3", "T4", "T5", "T6", "O1", "O2"
-];
-
-const fetchEEGFromNumpy = async (patientId: string) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/eeg/data/${patientId}/`);
-    if (!response.ok) throw new Error('Failed to fetch EEG numpy data');
-
-    const data = await response.json();
-    const processedData: ProcessedEEGPoint[] = data.eeg_data.map((point: any, index: number) => {
-      const eegPoint: ProcessedEEGPoint = { time: index };
-
-      EEG_CHANNELS.forEach(channel => {
-        eegPoint[channel] = point[channel] ?? 0;
-      });
-
-      return eegPoint;
-    });
-
-    setFullEEGBuffer(processedData);
-    setPointer(0);
-    setEEGData(processedData.slice(0, 50));
-  } catch (error) {
-    console.error('Error fetching EEG numpy data:', error);
-  }
-};
 
   const handleGenerateReport = () => {
     setIsPreviewMode(true);
@@ -283,7 +252,7 @@ const fetchEEGFromNumpy = async (patientId: string) => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {classificationResults.map((result) => (
+                      {classificationResults.map((result:any) => (
                         <tr key={result.timestamp}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {result.timestamp}
@@ -315,7 +284,7 @@ const fetchEEGFromNumpy = async (patientId: string) => {
                   <h3 className="text-md font-medium mb-2">EEG Sample Preview</h3>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={eegData}>
+                      <LineChart data={eegDataState}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="time" />
                         <YAxis />
@@ -443,7 +412,7 @@ const fetchEEGFromNumpy = async (patientId: string) => {
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={eegData}>
+                        <LineChart data={eegDataState}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="time" label={{ value: 'Time (s)', position: 'insideBottom', offset: -5 }} />
                           <YAxis label={{ value: 'Amplitude (µV)', angle: -90, position: 'insideLeft' }} />

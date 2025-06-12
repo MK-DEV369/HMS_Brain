@@ -1,0 +1,27 @@
+# Django & DRF
+Django>=5.0,<6.0
+djangorestframework>=3.14.0
+whitenoise>=6.6.0
+
+# Machine Learning & Data Science
+numpy>=1.24.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+tensorflow>=2.12.0
+
+# Visualization (for matplotlib usage)
+matplotlib>=3.8.0
+Pillow>=10.0.0
+
+# Twilio SMS
+twilio>=8.0.0
+
+# CORS headers
+django-cors-headers>=4.0.0
+
+# Gunicorn for production
+gunicorn>=21.2.0
+
+# Environment variables support (optional, if using .env files)
+python-dotenv>=1.0.0

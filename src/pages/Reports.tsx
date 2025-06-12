@@ -208,8 +208,8 @@ const getFilteredContent = (reportType, contentToPrint) => {
     // Remove patient information section
     const patientInfoSections = tempDiv.querySelectorAll('h3');
     patientInfoSections.forEach(heading => {
-      if (heading.textContent.includes('Patient Information') || 
-          heading.textContent.includes('Vital Signs')) {
+      if (heading.textContent?.includes('Patient Information') || 
+          heading.textContent?.includes('Vital Signs')) {
         const parentDiv = heading.closest('div');
         if (parentDiv) {
           parentDiv.remove();
@@ -225,18 +225,9 @@ const getFilteredContent = (reportType, contentToPrint) => {
       }
     });
     
-    // Keep only technical sections: Brain Activity Classification, EEG Visualization, Spectrogram
-    const sectionsToKeep = [
-      'Brain Activity Classification',
-      'EEG Visualization', 
-      'Spectrogram Visualization',
-      'Model Performance',
-      'Classification Details'
-    ];
-    
     // Remove doctor's notes for technical report
     const doctorNotesSection = tempDiv.querySelector('h2');
-    if (doctorNotesSection && doctorNotesSection.textContent.includes("Doctor's Notes")) {
+    if (doctorNotesSection && doctorNotesSection.textContent?.includes("Doctor's Notes")) {
       const parentDiv = doctorNotesSection.parentElement;
       if (parentDiv) {
         parentDiv.remove();

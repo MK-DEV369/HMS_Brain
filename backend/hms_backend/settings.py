@@ -79,7 +79,8 @@ WSGI_APPLICATION = "hms_backend.wsgi.application"
 ASGI_APPLICATION = 'backend.asgi.application'  
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # React development server
+    "http://localhost:5173",
+    "https://hms-brain.vercel.app", # React development server
 ]
 
 # Database
