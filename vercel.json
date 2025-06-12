@@ -7,7 +7,7 @@
   ],
   "builds": [
     {
-      "src": "backend/eeg_app/**/*.py",
+      "src": "hms_backend/wsgi.py",
       "use": "@vercel/python"
     }
   ],
@@ -21,5 +21,10 @@
     "backend/eeg_app": {
       "includeFiles": "backend/intelligence/preprocessed/**/*"
     }
+  },
+  "env": {
+    "ENVIRONMENT": "production",
+    "VERCEL": "true",
+    "DEBUG": "false"
   }
 }
